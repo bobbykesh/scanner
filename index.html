@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0f172a" />
+    <meta
+      name="description"
+      content="Local-first document cropping, document filters and PDF export."
+    />
+    <title>ProScan Studio | Stage 4.2</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="vendor/jspdf-2.5.1.umd.min.js"></script>
+    <script defer src="vision.js"></script>
+    <script defer src="filter-client.js"></script>
+    <script defer src="paper-match.js"></script>
+    <script defer src="local-repair-core.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body class="studio-mode dark-theme">
+    <nav class="navbar" aria-label="Application">
+      <a class="logo" href="./">Pro<span>Scan Studio</span></a>
+      <div class="nav-actions">
+        <button
+          id="theme-toggle"
+          class="nav-btn"
+          aria-label="Switch to light theme"
+          title="Switch to light theme"
+        >
+          <svg
+            class="nav-icon theme-sun"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"
+            />
+          </svg>
+          <svg
+            class="nav-icon theme-moon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 13a9 9 0 0 1-10-10A9 9 0 1 0 21 13Z" />
+          </svg>
+          <span>Theme</span>
+        </button>
+        <button
+          id="btn-hard-refresh"
+          class="nav-btn"
+          title="Refresh application files; keep saved documents"
+        >
+          <svg
+            class="nav-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path
+              d="M20 7v5h-5M4 17v-5h5M6.1 6.1A8 8 0 0 1 19.5 10M4.5 14A8 8 0 0 0 17.9 17.9"
+            />
+          </svg>
+          <span>Refresh</span>
+        </button>
+        <button
+          id="btn-memory"
+          class="nav-btn"
+          title="Free temporary memory without deleting documents"
+          aria-label="Memory controls"
+        >
+          <svg
+            class="nav-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            aria-hidden="true"
+          >
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+            <path
+              d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"
+            /></svg
+          ><span>Memory</span>
+        </button>
+        <span id="offline-badge" class="badge">Checking…</span>
+      </div>
+    </nav>
+    <main class="studio-container">
+      <div
+        id="loading-overlay"
+        class="overlay"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="loader"></div>
+        <p id="loading-text">Starting local image engine…</p>
+        <button id="btn-retry" class="tool-btn primary" hidden>
+          Reload app
+        </button>
+      </div>
+      <div
+        id="status-message"
+        class="status-message"
+        role="status"
+        aria-live="polite"
+        hidden
+      ></div>
+      <div id="upload-area" class="upload-area">
+        <button class="drop-zone" id="drop-zone" disabled>
+          <span class="upload-icon" aria-hidden="true">▣</span>
+          <strong>Import Document</strong>
+          <span>Choose an image or drop it here</span>
+          <small>JPEG, PNG or WebP · processed on this device</small>
+        </button>
+        <input type="file" id="file-input" hidden accept="image/*" />
+        <button id="btn-return-gallery" class="tool-btn" hidden>
+          Back to document
+        </button>
+        <p class="footnote">
+          Stage 4.2 · Document filters · local processing. Advanced AI is not
+          enabled.
+        </p>
+      </div>
+      <section
+        id="crop-view"
+        class="view-container"
+        aria-label="Crop document"
+        hidden
+      >
+        <div class="toolbar">
+          <div class="tool-group">
+            <span class="tool-label">Manual Crop</span
+            ><button id="btn-crop" class="tool-btn primary" disabled>
+              Flatten &amp; Process
+            </button>
+          </div>
+          <div class="tool-group">
+            <button id="btn-undo" class="tool-btn">Undo crop</button
+            ><button id="btn-reset" class="tool-btn danger">
+              Reset corners</button
+            ><button id="btn-cancel-crop" class="tool-btn">Cancel</button>
+          </div>
+        </div>
+        <div class="studio-layout">
+          <div class="stage-panel">
+            <div class="panel-label">Source · drag the four corners</div>
+            <div class="canvas-wrapper source-wrapper">
+              <canvas id="canvas-input"></canvas>
+              <div id="handle-container"></div>
+            </div>
+          </div>
+          <div class="stage-panel">
+            <div class="panel-label">Live Preview</div>
+            <div class="canvas-wrapper">
+              <canvas id="canvas-preview"></canvas>
+            </div>
+            <p id="preview-status" class="footnote" role="status"></p>
+          </div>
+        </div>
+      </section>
+      <section
+        id="process-view"
+        class="view-container"
+        aria-label="Edit document"
+        hidden
+      >
+        <div class="processed-stage">
+          <div class="canvas-wrapper" id="document-surface">
+            <canvas id="canvas-final"></canvas
+            ><canvas id="canvas-mask" aria-label="Erase selection"></canvas>
+          </div>
+        </div>
+        <div class="bottom-toolbar">
+          <div class="tool-group">
+            <button id="btn-open-filters" class="tool-btn">Filters</button
+            ><button id="btn-open-erase" class="tool-btn">Erase tools</button
+            ><button id="btn-undo-edit" class="tool-btn" disabled>
+              Undo edit
+            </button>
+          </div>
+          <div class="tool-group">
+            <button id="btn-rotate" class="tool-btn">Rotate</button
+            ><button id="btn-save-page" class="tool-btn success">
+              Add to Doc</button
+            ><button id="btn-back" class="tool-btn">Back</button>
+          </div>
+        </div>
+        <section
+          id="erase-panel"
+          class="erase-studio erase-sheet"
+          aria-label="Manual erase editor"
+          hidden
+        >
+          <div class="editor-view-controls" aria-label="Zoom and history">
+            <button
+              id="btn-erase-undo"
+              class="tool-btn"
+              disabled
+              aria-label="Undo erase stroke"
+            >
+              ↶ Undo
+            </button>
+            <button
+              id="btn-erase-redo"
+              class="tool-btn"
+              disabled
+              aria-label="Redo erase stroke"
+            >
+              ↷ Redo
+            </button>
+            <span class="control-spacer"></span>
+            <button id="btn-zoom-out" class="tool-btn" aria-label="Zoom out">
+              −
+            </button>
+            <output id="erase-zoom" aria-live="polite">100%</output>
+            <button id="btn-zoom-in" class="tool-btn" aria-label="Zoom in">
+              +
+            </button>
+            <button id="btn-zoom-fit" class="tool-btn">Fit</button>
+          </div>
+          <div class="erase-toolbar" role="group" aria-label="Erase tools">
+            <button
+              class="erase-tool active"
+              data-tool="pen"
+              aria-pressed="true"
+              aria-controls="pen-settings"
+              aria-expanded="false"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m4 16 12-12 4 4L8 20l-5 1Z" />
+                <path d="m13 7 4 4" /></svg
+              ><span>Pen</span
+              ><i id="pen-color-indicator" aria-hidden="true"></i>
+            </button>
+            <button class="erase-tool" data-tool="rect" aria-pressed="false">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="4" y="5" width="16" height="14" rx="1" /></svg
+              ><span>Rectangle</span>
+            </button>
+            <button
+              class="erase-tool"
+              data-tool="repair"
+              aria-pressed="false"
+              title="Optional local inpainting, not AI"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="m4 20 12-12 4 4L8 24M15 3l1-2 1 2 2 1-2 1-1 2-1-2-2-1ZM5 6v4M3 8h4"
+                /></svg
+              ><span>Local repair</span>
+            </button>
+            <button
+              class="erase-tool"
+              data-tool="clone"
+              aria-pressed="false"
+              title="Copy clean paper from a source point; no AI"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                aria-hidden="true"
+              >
+                <path d="M9 3h6v6l3 4v4H6v-4l3-4ZM4 21h16M5 17h14" /></svg
+              ><span>Clone</span>
+            </button>
+            <button class="erase-tool" data-tool="pan" aria-pressed="false">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path
+                  d="M9 11V5a2 2 0 0 1 4 0v6-7a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v9c0 4-3 6-6 6h-2c-2 0-4-1-5-3l-5-6a2 2 0 0 1 3-3l3 3"
+                /></svg
+              ><span>Pan</span>
+            </button>
+            <button
+              class="erase-tool"
+              disabled
+              title="Magic selection requires a future detection model"
+            >
+              <span aria-hidden="true">✧</span><span>Magic · later</span>
+            </button>
+            <button
+              class="erase-tool"
+              disabled
+              title="Requires a future detection model"
+            >
+              <span aria-hidden="true">✎</span><span>Handwriting · later</span>
+            </button>
+            <button
+              class="erase-tool"
+              disabled
+              title="Requires a future detection model"
+            >
+              <span aria-hidden="true">A</span><span>Text · later</span>
+            </button>
+          </div>
+          <details class="local-repair-controls">
+            <summary>Clone source &amp; result preview</summary>
+            <div class="local-repair-row">
+              <button id="btn-clone-source" class="tool-btn">
+                Set clone source</button
+              ><output id="clone-source-status">Clone source not set</output>
+            </div>
+            <div class="local-repair-row">
+              <button id="btn-preview-repair" class="tool-btn" disabled>
+                Preview result</button
+              ><button
+                id="btn-compare-repair"
+                class="tool-btn"
+                aria-pressed="false"
+                disabled
+              >
+                Show before
+              </button>
+            </div>
+            <p id="repair-preview-status" role="status" aria-live="polite">
+              Draft selections · Preview result shows the flattened repair
+              before Apply.
+            </p>
+            <small
+              >Clone copies from the unchanged page, starting at your chosen
+              source for each stroke. Repair uses small surrounding crops, not
+              AI. Cancel stops a running preview.</small
+            >
+          </details>
+          <label class="cover-mode-row" for="cover-mode"
+            >Cover background
+            <select id="cover-mode">
+              <option value="auto" selected>
+                Auto · follow gentle shading
+              </option>
+              <option value="flat">Auto · solid paper match</option>
+              <option value="picked">Picked paper color · both tools</option>
+              <option value="manual">
+                Manual · pen color / white rectangle
+              </option>
+            </select>
+          </label>
+          <div class="paper-picker-row">
+            <button id="btn-pick-paper" class="tool-btn" aria-pressed="false">
+              Pick paper</button
+            ><label for="paper-color">Paper color</label
+            ><input
+              id="paper-color"
+              type="color"
+              value="#ffffff"
+              aria-label="Custom paper color"
+            /><output id="paper-color-value" for="paper-color">#ffffff</output>
+          </div>
+          <p class="cover-match-note">
+            Auto estimates smooth shading, not texture or hidden detail. Pick a
+            clean paper area to override. Inspect before Apply.
+          </p>
+          <section
+            id="pen-settings"
+            class="pen-settings"
+            aria-label="Pen color and size"
+            hidden
+          >
+            <button
+              id="btn-close-pen-settings"
+              class="brush-collapse"
+              aria-label="Close pen settings"
+              title="Close pen settings"
+            >
+              ⌄
+            </button>
+            <div class="pen-palette" role="group" aria-label="Pen cover color">
+              <button
+                type="button"
+                class="color-swatch selected"
+                data-color="#ffffff"
+                style="--swatch: #ffffff"
+                aria-label="White"
+                aria-pressed="true"
+                title="White"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#f1f1f1"
+                style="--swatch: #f1f1f1"
+                aria-label="Off-white"
+                aria-pressed="false"
+                title="Off-white"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#d4d4d4"
+                style="--swatch: #d4d4d4"
+                aria-label="Light gray"
+                aria-pressed="false"
+                title="Light gray"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#b2b2b2"
+                style="--swatch: #b2b2b2"
+                aria-label="Silver gray"
+                aria-pressed="false"
+                title="Silver gray"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#8a8a8a"
+                style="--swatch: #8a8a8a"
+                aria-label="Medium gray"
+                aria-pressed="false"
+                title="Medium gray"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#686868"
+                style="--swatch: #686868"
+                aria-label="Dark gray"
+                aria-pressed="false"
+                title="Dark gray"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#444444"
+                style="--swatch: #444444"
+                aria-label="Charcoal"
+                aria-pressed="false"
+                title="Charcoal"
+              ></button
+              ><button
+                type="button"
+                class="color-swatch"
+                data-color="#000000"
+                style="--swatch: #000000"
+                aria-label="Black"
+                aria-pressed="false"
+                title="Black"
+              ></button>
+            </div>
+            <div class="brush-size-heading">
+              <label for="brush-size"
+                >Size <small>(screen px at stroke start)</small></label
+              ><output id="brush-value" for="brush-size">3</output>
+            </div>
+            <input
+              id="brush-size"
+              type="range"
+              min="1"
+              max="80"
+              value="3"
+              aria-label="Pen or local repair brush size"
+            />
+            <p id="brush-mode-note">
+              Auto follows gentle shading. Picked color applies to both tools;
+              Manual keeps the pen swatch or white rectangle.
+            </p>
+          </section>
+          <div class="erase-status-line">
+            <p id="erase-hint" class="erase-hint">
+              Pen covers in your chosen color. Click Pen to choose color and
+              size.
+            </p>
+            <output id="erase-count" aria-live="polite">0 edits</output>
+          </div>
+          <div class="modal-actions erase-footer">
+            <button id="btn-cancel-erase" class="tool-btn">Cancel</button
+            ><button id="btn-clear-mask" class="tool-btn">Clear edits</button
+            ><span class="erase-title"
+              >Erase <small>Local · Stage 4.2</small></span
+            ><button id="btn-apply-erase" class="tool-btn primary" disabled>
+              Apply
+            </button>
+          </div>
+        </section>
+      </section>
+      <section
+        id="gallery-view"
+        class="view-container"
+        aria-label="Document pages"
+        hidden
+      >
+        <div class="toolbar">
+          <div class="tool-group">
+            <span class="tool-label">Document Stack</span
+            ><button id="btn-add-more" class="tool-btn primary">
+              Add Page
+            </button>
+          </div>
+          <div class="tool-group">
+            <span id="save-status" class="footnote"></span
+            ><button id="btn-export-trigger" class="tool-btn success">
+              Export</button
+            ><button id="btn-share" class="tool-btn">Share PDF</button>
+          </div>
+        </div>
+        <div id="page-gallery" class="page-gallery"></div>
+      </section>
+    </main>
+    <dialog
+      id="filter-modal"
+      class="modal filter-sheet"
+      aria-labelledby="filter-title"
+    >
+      <div class="modal-content filter-gallery">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <div
+          class="filter-grid"
+          role="group"
+          aria-label="Document filter presets"
+        >
+          <button
+            class="filter-item active"
+            data-filter="original"
+            aria-pressed="true"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Original</span></button
+          ><button class="filter-item" data-filter="auto" aria-pressed="false">
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Auto</span></button
+          ><button
+            class="filter-item"
+            data-filter="lighten"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Lighten</span></button
+          ><button
+            class="filter-item"
+            data-filter="shadow"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">No Shadow</span></button
+          ><button
+            class="filter-item"
+            data-filter="magic-color"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Magic Color</span></button
+          ><button
+            class="filter-item"
+            data-filter="magic-pro"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Magic Pro</span></button
+          ><button
+            class="filter-item"
+            data-filter="grayscale"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Grayscale</span></button
+          ><button class="filter-item" data-filter="bw" aria-pressed="false">
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">B&amp;W</span></button
+          ><button class="filter-item" data-filter="bw2" aria-pressed="false">
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">B&amp;W 2</span></button
+          ><button
+            class="filter-item"
+            data-filter="bw-soft"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Soft B&amp;W</span></button
+          ><button
+            class="filter-item"
+            data-filter="enhance"
+            aria-pressed="false"
+          >
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Enhance</span></button
+          ><button class="filter-item" data-filter="eco" aria-pressed="false">
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Eco</span></button
+          ><button class="filter-item" data-filter="magic" aria-pressed="false">
+            <span class="filter-preview"
+              ><canvas aria-hidden="true" width="1" height="1"></canvas
+              ><span class="thumbnail-loading">Loading…</span></span
+            ><span class="filter-name">Magic · legacy</span></button
+          ><button
+            class="filter-item"
+            disabled
+            title="Requires a future detection model"
+          >
+            <span class="filter-preview unavailable"
+              ><span aria-hidden="true">✎</span><small>AI · later</small></span
+            ><span class="filter-name">No Handwriting</span>
+          </button>
+        </div>
+        <div class="filter-controls">
+          <label for="filter-strength" id="filter-strength-label"
+            >Strength</label
+          ><input
+            id="filter-strength"
+            type="range"
+            min="0"
+            max="100"
+            value="70"
+            aria-describedby="filter-description"
+          /><output id="filter-strength-value" for="filter-strength">70%</output
+          ><button id="filter-compare" class="tool-btn" aria-pressed="false">
+            Show source
+          </button>
+        </div>
+        <div id="bw-controls" class="bw-controls" hidden>
+          <label for="bw-mode">Saved B&amp;W style</label
+          ><select id="bw-mode">
+            <option value="soft">Soft · legacy gray detail</option>
+            <option value="crisp">Crisp · legacy binary</option>
+          </select>
+        </div>
+        <button id="filter-modernize" class="tool-btn" hidden>
+          Use updated preset
+        </button>
+        <details class="fine-adjustments" id="fine-adjustments">
+          <summary>Brightness · Contrast · Sharpness</summary>
+          <label class="adjustment-row" for="adjust-brightness"
+            ><span>Brightness</span
+            ><input
+              id="adjust-brightness"
+              type="range"
+              min="-50"
+              max="50"
+              value="0"
+            /><output id="adjust-brightness-value" for="adjust-brightness"
+              >0</output
+            ></label
+          ><label class="adjustment-row" for="adjust-contrast"
+            ><span>Contrast</span
+            ><input
+              id="adjust-contrast"
+              type="range"
+              min="-50"
+              max="50"
+              value="0"
+            /><output id="adjust-contrast-value" for="adjust-contrast"
+              >0</output
+            ></label
+          ><label class="adjustment-row" for="adjust-sharpness"
+            ><span>Sharpness</span
+            ><input
+              id="adjust-sharpness"
+              type="range"
+              min="0"
+              max="100"
+              value="0"
+            /><output id="adjust-sharpness-value" for="adjust-sharpness"
+              >0</output
+            ></label
+          ><button id="filter-reset-adjustments" class="tool-btn">
+            Reset adjustments</button
+          ><small
+            >Neutral Original is untouched. Binary B&amp;W is re-binarized after
+            adjustments.</small
+          >
+        </details>
+        <p id="filter-description" class="filter-description"></p>
+        <p
+          id="filter-status"
+          class="filter-status"
+          role="status"
+          aria-live="polite"
+        >
+          Preview ready
+        </p>
+        <div class="modal-header filter-footer">
+          <button
+            id="filter-cancel"
+            class="modal-close"
+            aria-label="Cancel filters"
+            title="Cancel changes"
+          >
+            ✕
+          </button>
+          <h3 id="filter-title">Filters <small>Worker · Stage 4.2</small></h3>
+          <button
+            id="filter-confirm"
+            class="modal-confirm"
+            aria-label="Confirm filter"
+            title="Apply at full working resolution"
+          >
+            ✓
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="memory-modal" class="modal" aria-labelledby="memory-title">
+      <div class="modal-content">
+        <h3 id="memory-title">Free temporary memory</h3>
+        <p>
+          Unload the filter worker and release temporary previews. No saved
+          documents, current working images, offline app files or site data will
+          be deleted.
+        </p>
+        <label class="memory-undo-option"
+          ><input id="memory-drop-undo" type="checkbox" /> Also discard the
+          previous image-edit Undo snapshot (asks for confirmation)</label
+        >
+        <p id="memory-status" role="status" aria-live="polite"></p>
+        <p class="footnote">
+          This cannot force the browser to reclaim RAM or unload the main crop
+          engine. It is not Clear site data. No AI model is installed in this
+          release.
+        </p>
+        <div class="modal-actions">
+          <button id="memory-close" class="tool-btn">Close</button
+          ><button id="memory-free" class="tool-btn primary">
+            Free memory
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="name-modal" class="modal">
+      <form id="export-form" class="modal-content">
+        <h3>Export Document</h3>
+        <label for="filename-input">File name</label
+        ><input
+          type="text"
+          id="filename-input"
+          placeholder="My_Document"
+          maxlength="100"
+        />
+        <div class="modal-setting">
+          <label for="export-format">Format</label
+          ><select id="export-format">
+            <option value="pdf">PDF (all pages)</option>
+            <option value="jpg">JPEG (first page only)</option>
+            <option value="png">PNG (first page only)</option>
+          </select>
+        </div>
+        <div class="modal-setting" id="export-layout-setting">
+          <label for="export-layout">PDF page layout</label
+          ><select id="export-layout">
+            <option value="document" selected>Document · edge-to-edge</option>
+            <option value="a4">Fit to A4 · 5 mm margins</option></select
+          ><small class="footnote"
+            >Document layout follows each scan's proportions, without added
+            canvas or margins.</small
+          >
+        </div>
+        <div class="modal-setting">
+          <label for="compression-select"
+            >JPEG quality (color/gray PDF and JPEG)</label
+          ><select id="compression-select">
+            <option value="1">Maximum</option>
+            <option value="0.8">High</option>
+            <option value="0.6" selected>Medium</option>
+            <option value="0.3">Low</option>
+          </select>
+        </div>
+        <div class="modal-setting">
+          <label
+            ><input type="checkbox" id="ocr-toggle" disabled /> Searchable OCR
+            PDF · not enabled yet</label
+          >
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="modal-cancel" class="tool-btn">
+            Cancel</button
+          ><button id="modal-save" type="submit" class="tool-btn primary">
+            Export Now
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      id="share-modal"
+      class="modal share-modal"
+      aria-labelledby="share-title"
+    >
+      <div class="modal-content">
+        <div class="share-scroll">
+          <h3 id="share-title">Compress &amp; Share</h3>
+          <p class="share-intro">
+            Choose compression, check the file size, then share. Your saved
+            pages stay unchanged.
+          </p>
+          <label for="share-filename">PDF file name</label>
+          <input
+            type="text"
+            id="share-filename"
+            maxlength="100"
+            placeholder="ProScan_Document"
+          />
+          <div class="modal-setting">
+            <label for="share-preset">Compression preset</label>
+            <select id="share-preset">
+              <option value="best">Best quality · no resizing</option>
+              <option value="light">Light · high quality</option>
+              <option value="balanced" selected>Balanced · recommended</option>
+              <option value="strong">Strong · reduced detail</option>
+              <option value="custom">Custom settings</option>
+            </select>
+          </div>
+          <div class="share-quality-row">
+            <label for="share-quality">JPEG quality</label
+            ><output id="share-quality-value" for="share-quality">65%</output>
+          </div>
+          <input
+            id="share-quality"
+            type="range"
+            min="20"
+            max="100"
+            value="65"
+          />
+          <div class="modal-setting">
+            <label for="share-resolution"
+              >Maximum page image size (longest edge)</label
+            >
+            <select id="share-resolution">
+              <option value="0">Keep working resolution</option>
+              <option value="2400">Up to 2400 px</option>
+              <option value="1800" selected>Up to 1800 px</option>
+              <option value="1200">Up to 1200 px</option>
+            </select>
+          </div>
+          <div class="modal-setting">
+            <label for="share-layout">PDF page layout</label
+            ><select id="share-layout">
+              <option value="document" selected>Document · edge-to-edge</option>
+              <option value="a4">Fit to A4 · 5 mm margins</option>
+            </select>
+          </div>
+          <div class="share-file-summary">
+            <span>Generated PDF size</span
+            ><strong id="share-size">Calculating…</strong
+            ><small id="share-details"></small>
+          </div>
+          <progress
+            id="share-progress"
+            max="1"
+            value="0"
+            aria-label="PDF compression progress"
+          ></progress>
+          <p id="share-status" role="status" aria-live="polite">
+            Preparing your PDF…
+          </p>
+          <p id="share-support" class="footnote"></p>
+          <p class="share-warning">
+            Compression is lossy; stronger settings can reduce small-text
+            clarity. Color/gray pages use JPEG; binary pages use lossless
+            encoding. Resizing can remove fine detail. Smaller size is not
+            guaranteed.
+          </p>
+        </div>
+        <div class="modal-actions share-actions">
+          <button id="share-cancel" class="tool-btn">Cancel</button
+          ><button id="share-retry" class="tool-btn" hidden>Retry</button
+          ><button id="share-download" class="tool-btn" disabled>
+            Download copy</button
+          ><button id="share-send" class="tool-btn primary" disabled>
+            Preparing…
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <div id="update-toast" class="update-toast" hidden>
+      <p>App update ready. Save your edits before reloading.</p>
+      <button id="update-btn" class="tool-btn primary">Reload</button>
+    </div>
+    <canvas id="canvas-buffer" hidden></canvas>
+  </body>
+</html>
