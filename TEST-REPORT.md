@@ -169,6 +169,21 @@ Playwright WebKit 26.0 on Linux, not physical iPhone Safari:
 
 Served accepted Stage 4.1 at a fixed origin; saved a legacy Soft B&W fixture and installed its service worker. Replaced all updated files, including the new repair core, with 4.2. Triggered waiting update and explicitly accepted. Stage 4.2 title, identical saved-page pixels/settings, preview Cancel restoration, offline reload and Share preparation passed in Chromium. Database/store/schema unchanged.
 
+## Large PDF import (chunked / resumable) — PASS
+
+Driven against a real 130-page PDF in headless Chromium.
+
+- First pick imported exactly 100 pages and stored a resume record pointing at page 101; the notice stated that 30 pages remain and that re-picking the same file fetches them.
+- Re-picking the same file opened the resume prompt ("You have imported 1–100", "Continue at page 101") rather than duplicating pages.
+- Continuing produced 130 cards with 130 unique ids in continuous order 0–129, and cleaned up both the resume record and the staged checkpoints.
+- **Interrupt test:** the import was cancelled after 60 saved pages; the resume point recorded `nextPage: 61`, and re-picking the file completed the document to 130. Cancelling never leaves a partially written page.
+- Re-picking a *different* file with the same page count does not offer to resume — the key is a SHA-256 of the file bytes, so two files never share a resume point.
+- Start over replaces only that file's pages; page ids stayed unique and the count stayed at 100, with no duplicates in the stack. Pages carrying text or signature annotations require explicit confirmation first.
+- Re-picking a file that is already fully imported now opens an "Already in your stack" prompt with no continue action, so the pages cannot be silently duplicated; Cancel adds nothing.
+- Schema upgrade: opening the app over an existing database added the `imports` and `importPages` stores, left `pages` intact and reported version 2.
+- Incremental saving: only changed pages are written on each save, and removed pages are deleted — the stack is never cleared and rewritten.
+- No page errors in any run.
+
 ## Delivery verification
 
 App JavaScript syntax, all required asset paths, service-worker precache, ZIP integrity, unchanged pinned vendor libraries, unchanged vision/filter recipe/PDF codec, and locked Stage 4.1 archive/workspace contents checked. Complete vendor folder and license files are included.

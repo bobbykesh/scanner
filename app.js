@@ -509,6 +509,382 @@
     $("preview-status").textContent = "";
     showView("crop-view");
   }
+
+  // ---- Resumable chunked import (Stage 7) ---------------------------
+  // Per-pick limit, not a document limit: a 200-page PDF is two picks.
+  const IMPORT_CHUNK = 100;
+  let importCancelled = false;
+  let activeImport = null;
+
+  function hashBytes(buffer, version) {
+    if (crypto.subtle && crypto.subtle.digest) {
+      return crypto
+        .subtle.digest("SHA-256", buffer.slice(0))
+        .then((digest) =>
+          [...new Uint8Array(digest)]
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(""),
+        )
+        .catch(() => null);
+    }
+    // Fallback: cheap FNV-style rolling hash. Only used where SubtleCrypto is
+    // unavailable; identity still includes size + lastModified.
+    let hash = 2166136261;
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < view.length; i += 1) {
+      hash ^= view[i];
+      hash = Math.imul(hash, 16777619);
+    }
+    return Promise.resolve(`fnv${(hash >>> 0).toString(16)}-${view.length}`);
+  }
+
+  function importKey(hash, pageNum) {
+    return `${hash}:${pageNum}`;
+  }
+
+  function withStore(name, mode, work) {
+    return openDB().then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(name, mode);
+          let result;
+          tx.oncomplete = () => {
+            db.close();
+            resolve(result);
+          };
+          tx.onerror = tx.onabort = () => {
+            db.close();
+            reject(tx.error || new Error("Storage transaction failed."));
+          };
+          try {
+            result = work(tx.objectStore(name));
+          } catch (error) {
+            tx.abort();
+            reject(error);
+          }
+        }),
+    );
+  }
+
+  function requestResult(request) {
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Checkpointing lives in its own store so saveToDB() can never wipe it.
+  async function putCheckpoint(hash, pageNum, page) {
+    await withStore(CHECKPOINT_STORE, "readwrite", (store) =>
+      store.put({ key: importKey(hash, pageNum), pageNum, page, at: Date.now() }),
+    );
+  }
+  async function listCheckpoints(hash) {
+    const keys = await withStore(CHECKPOINT_STORE, "readonly", (store) =>
+      requestResult(store.getAllKeys()),
+    );
+    return (keys || [])
+      .filter((key) => typeof key === "string" && key.startsWith(`${hash}:`))
+      .map((key) => Number(key.split(":")[1]))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => a - b);
+  }
+  async function readCheckpoint(hash, pageNum) {
+    return withStore(CHECKPOINT_STORE, "readonly", (store) =>
+      requestResult(store.get(importKey(hash, pageNum))),
+    );
+  }
+  async function clearCheckpoints(hash) {
+    const keys = await withStore(CHECKPOINT_STORE, "readonly", (store) =>
+      requestResult(store.getAllKeys()),
+    );
+    const mine = (keys || []).filter(
+      (key) => typeof key === "string" && key.startsWith(`${hash}:`),
+    );
+    if (!mine.length) return;
+    await withStore(CHECKPOINT_STORE, "readwrite", (store) => {
+      mine.forEach((key) => store.delete(key));
+    });
+  }
+  async function getImportRecord(hash) {
+    return withStore(IMPORT_STORE, "readonly", (store) =>
+      requestResult(store.get(hash)),
+    );
+  }
+  async function putImportRecord(record) {
+    await withStore(IMPORT_STORE, "readwrite", (store) =>
+      store.put(record),
+    );
+  }
+  async function deleteImportRecord(hash) {
+    await withStore(IMPORT_STORE, "readwrite", (store) => store.delete(hash));
+  }
+
+  async function pageBytesAvailable() {
+    try {
+      if (!navigator.storage || !navigator.storage.estimate) return Infinity;
+      const { usage, quota } = await navigator.storage.estimate();
+      return Math.max(0, (quota || 0) - (usage || 0));
+    } catch (_) {
+      return Infinity;
+    }
+  }
+
+  // "Start over" deletes only raw pages from this fingerprint. Edited pages are
+  // protected behind an explicit confirmation.
+  async function purgeFingerprintPages(hash, record) {
+    const ids = new Set(record?.pageIds || []);
+    const mine = documentPages.filter((page) => ids.has(page.id));
+    if (!mine.length) return 0;
+    const edited = mine.filter(
+      (page) => (page.annotations && page.annotations.length) || page.edited,
+    );
+    if (
+      edited.length &&
+      !confirm(
+        `${edited.length} of these ${mine.length} pages have your added text or signature. Replace them anyway?`,
+      )
+    )
+      return -1;
+    documentPages = documentPages.filter((page) => !ids.has(page.id));
+    await persist();
+    renderGallery();
+    return mine.length;
+  }
+
+  // Shown when the same file is picked again: mid-import or already complete.
+  function askResume(record, totalPages) {
+    const complete = record.nextPage > totalPages;
+    const done = complete ? totalPages : record.nextPage - 1;
+    return new Promise((resolve) => {
+      const dialog = $("resume-modal");
+      if (!dialog) {
+        resolve(
+          confirm(
+            `You already imported pages 1–${done} of this file. Continue at page ${record.nextPage}?`,
+          )
+            ? "continue"
+            : "cancel",
+        );
+        return;
+      }
+      $("resume-title").textContent = complete
+        ? "Already in your stack"
+        : "Continue this document?";
+      $("resume-body").textContent = complete
+        ? `All ${totalPages} pages of this file are already in your document stack. Starting over replaces them.`
+        : `This file has ${totalPages} pages. You have imported 1–${done}.`;
+      $("resume-continue").hidden = complete;
+      $("resume-continue").textContent = `Continue at page ${record.nextPage}`;
+      $("resume-restart").textContent = complete
+        ? "Start over (replace these pages)"
+        : "Start over from page 1";
+      const finish = (choice) => {
+        dialog.close();
+        resolve(choice);
+      };
+      $("resume-continue").onclick = () => finish("continue");
+      $("resume-restart").onclick = () => finish("restart");
+      $("resume-cancel").onclick = () => finish("cancel");
+      dialog.oncancel = (event) => {
+        event.preventDefault();
+        finish("cancel");
+      };
+      // The import spinner must not keep humming behind a question that is
+      // waiting on the user; restore it if they choose to carry on.
+      const overlay = $("loading-overlay");
+      const wasLoading = overlay && !overlay.hidden;
+      if (wasLoading) overlay.hidden = true;
+      const restore = () => {
+        if (wasLoading && overlay) overlay.hidden = false;
+        dialog.removeEventListener("close", restore);
+      };
+      dialog.addEventListener("close", restore);
+      dialog.showModal();
+    });
+  }
+
+  // Renders one page and returns the stored page record.
+  async function renderImportedPage(pdfDoc, pageNum, maxEdge) {
+    const rendered = await renderPdfPageToCanvas(pdfDoc, pageNum, maxEdge);
+    try {
+      const pngDataUrl = rendered.toDataURL("image/png");
+      const origDataUrl = rendered.toDataURL("image/jpeg", 0.95);
+      return {
+        stage1Version: 1,
+        stage2Version: 1,
+        stage3Version: 1,
+        stage32Version: 1,
+        fromPdf: true,
+        filterSettings: { ...FilterProcessor.defaults("original") },
+        id: crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}-${pageNum}`,
+        original: origDataUrl,
+        cropped: pngDataUrl,
+        filter: "original",
+        final: pngDataUrl,
+      };
+    } finally {
+      rendered.width = rendered.height = 1;
+    }
+  }
+
+  // Imports a window of a PDF, checkpointing every rendered page immediately.
+  async function importPdfChunk(pdfDoc, hash, startPage, totalPages, pageIds) {
+    const pageMaxEdge = totalPages <= 10 ? 2200 : 1800;
+    const lastPage = Math.min(totalPages, startPage + IMPORT_CHUNK - 1);
+    const added = [];
+    const existing = new Set(await listCheckpoints(hash));
+    let bytesSeen = 0,
+      sized = 0;
+
+    for (let pageNum = startPage; pageNum <= lastPage; pageNum += 1) {
+      if (importCancelled) break;
+      setLoading(
+        `Importing page ${pageNum} of ${totalPages} (${added.length} added)…`,
+      );
+      setImportProgress(pageNum, totalPages, added.length);
+      // Yield to the event loop so Cancel and the progress line stay live.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (importCancelled) break;
+
+      let page = null;
+      if (existing.has(pageNum)) {
+        const checkpoint = await readCheckpoint(hash, pageNum);
+        page = checkpoint?.page || null;
+      }
+      if (!page) {
+        page = await renderImportedPage(pdfDoc, pageNum, pageMaxEdge);
+        await putCheckpoint(hash, pageNum, page);
+        const approx = page.final.length + page.original.length + page.cropped.length;
+        bytesSeen += approx;
+        sized += 1;
+        // Adaptive safety: stop when this device really is out of space.
+        const avg = bytesSeen / sized;
+        const left = lastPage - pageNum;
+        if (left > 0) {
+          const room = await pageBytesAvailable();
+          if (room < avg * 1.5) {
+            added.push(page);
+            pageIds.push(page.id);
+            notice(
+              `Storage is nearly full. Imported ${added.length} pages; free space and pick the file again to continue.`,
+            );
+            break;
+          }
+        }
+      }
+      added.push(page);
+      pageIds.push(page.id);
+    }
+
+    if (added.length) {
+      documentPages.push(...added);
+      await persist();
+      renderGallery();
+    }
+    return added.length;
+  }
+
+  function setImportProgress(pageNum, totalPages, added) {
+    const bar = $("import-progress");
+    const bar_fill = $("import-progress-fill");
+    const text = $("import-progress-text");
+    if (!bar) return;
+    bar.hidden = false;
+    if (bar_fill)
+      bar_fill.style.width = `${Math.round((pageNum / Math.max(1, totalPages)) * 100)}%`;
+    if (text)
+      text.textContent = `Page ${pageNum} of ${totalPages} · ${added} added`;
+  }
+  function hideImportProgress() {
+    const bar = $("import-progress");
+    if (bar) bar.hidden = true;
+  }
+
+  // Orchestrates fingerprint -> resume decision -> chunk -> record.
+  async function importPdfResumable(file, pdfDoc, buffer, version) {
+    const totalPages = pdfDoc.numPages || 0;
+    const hash = await hashBytes(buffer, version);
+    if (!hash) throw new Error("Could not read this file. Try again.");
+    if (version !== importVersion) return false;
+
+    const record = await getImportRecord(hash);
+    let startPage = 1;
+    let pageIds = [];
+
+    if (record && record.nextPage > 1) {
+      const choice = await askResume(record, totalPages);
+      if (choice === "cancel") return false;
+      if (choice === "continue") {
+        startPage = record.nextPage;
+        pageIds = record.pageIds || [];
+      } else {
+        // Option B: replace this fingerprint's pages.
+        const purged = await purgeFingerprintPages(hash, record);
+        if (purged < 0) return false;
+        await clearCheckpoints(hash);
+        await deleteImportRecord(hash);
+      }
+    }
+
+    activeImport = { hash };
+    importCancelled = false;
+    let added = 0;
+    try {
+      added = await importPdfChunk(
+        pdfDoc,
+        hash,
+        startPage,
+        totalPages,
+        pageIds,
+      );
+    } finally {
+      activeImport = null;
+      hideImportProgress();
+    }
+    if (version !== importVersion) return false;
+
+    const nextPage = startPage + added;
+    recropReturnView = null;
+    renderGallery();
+    // showView hides any open notice, so it must run before notice().
+    showView("gallery-view");
+    if (nextPage <= totalPages) {
+      await putImportRecord({
+        fileHash: hash,
+        size: file.size,
+        lastModified: file.lastModified || 0,
+        totalPages,
+        nextPage,
+        pageIds,
+        createdAt: record?.createdAt || Date.now(),
+      });
+      notice(
+        importCancelled
+          ? `Import stopped. ${added} pages saved — pick the same file again to resume.`
+          : `Added ${added} pages. This PDF has ${totalPages - nextPage + 1} more — pick the same file again for pages ${nextPage}–${Math.min(totalPages, nextPage + IMPORT_CHUNK - 1)}.`,
+      );
+    } else {
+      // Keep a completed marker so picking the same file again is recognised
+      // instead of silently duplicating every page.
+      await putImportRecord({
+        fileHash: hash,
+        size: file.size,
+        lastModified: file.lastModified || 0,
+        totalPages,
+        nextPage: totalPages + 1,
+        pageIds,
+        createdAt: record?.createdAt || Date.now(),
+      });
+      await clearCheckpoints(hash);
+      notice(
+        `Imported ${added} pages from PDF. Tap any page to edit, filter, crop or erase, or use Export / Share PDF.`,
+      );
+    }
+    return true;
+  }
   async function importFile(file) {
     if (!file || busy || saving || !visionReady) return;
     const version = ++importVersion;
@@ -527,10 +903,9 @@
           const totalPages = pdfDoc.numPages || 0;
           if (totalPages < 1)
             throw new Error("This PDF file contains no pages.");
-          if (totalPages > MAX_PDF_PAGES)
-            throw new Error(
-              `This PDF has ${totalPages} pages. Import a PDF with up to ${MAX_PDF_PAGES} pages at a time for device memory safety.`,
-            );
+          // Per-pick limit rather than a hard refusal: large PDFs import in
+          // chunks and resume when the same file is picked again.
+          const resumes = totalPages > IMPORT_CHUNK;
           if (totalPages === 1) {
             setLoading("Rendering PDF page…");
             const rendered = await renderPdfPageToCanvas(
@@ -555,51 +930,13 @@
               "PDF page opened at full bounds. Adjust the four corners to crop, or tap Flatten & Process to edit filters, erase or save.",
             );
           } else {
-            const pageMaxEdge = totalPages <= 10 ? 2200 : 1800;
-            const importedPages = [];
-            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-              if (version !== importVersion) return;
-              setLoading(
-                `Rendering PDF page ${pageNum} of ${totalPages}…`,
-              );
-              await new Promise((resolve) => setTimeout(resolve, 0));
-              const rendered = await renderPdfPageToCanvas(
-                pdfDoc,
-                pageNum,
-                pageMaxEdge,
-              );
-              try {
-                const pngDataUrl = rendered.toDataURL("image/png");
-                const origDataUrl = rendered.toDataURL("image/jpeg", 0.95);
-                importedPages.push({
-                  stage1Version: 1,
-                  stage2Version: 1,
-                  stage3Version: 1,
-                  stage32Version: 1,
-                  fromPdf: true,
-                  filterSettings: { ...FilterProcessor.defaults("original") },
-                  id: crypto.randomUUID
-                    ? crypto.randomUUID()
-                    : `${Date.now()}-${Math.random()}-${pageNum}`,
-                  original: origDataUrl,
-                  cropped: pngDataUrl,
-                  filter: "original",
-                  final: pngDataUrl,
-                });
-              } finally {
-                rendered.width = rendered.height = 1;
-              }
-            }
-            if (version !== importVersion) return;
-            recropReturnView = null;
-            documentPages.push(...importedPages);
-            const saved = await persist();
-            dirty = !saved;
-            renderGallery();
-            showView("gallery-view");
-            notice(
-              `Imported ${importedPages.length} pages from PDF. Tap any page to edit, filter, crop or erase, or use Export / Share PDF.`,
+            const imported = await importPdfResumable(
+              file,
+              pdfDoc,
+              buffer,
+              version,
             );
+            if (!imported && resumes) return;
           }
         } finally {
           try {
@@ -4593,7 +4930,10 @@
 
   // IndexedDB writes are only considered saved when the transaction completes.
   const DB_NAME = "ProScanDB",
-    STORE_NAME = "pages";
+    STORE_NAME = "pages",
+    IMPORT_STORE = "imports",
+    CHECKPOINT_STORE = "importPages",
+    DB_VERSION = 2;
   function openDB() {
     return new Promise((resolve, reject) => {
       if (!window.indexedDB) {
@@ -4609,10 +4949,16 @@
           ),
         );
       }, 12000);
-      const request = indexedDB.open(DB_NAME, 1);
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains(STORE_NAME))
-          request.result.createObjectStore(STORE_NAME, { keyPath: "id" });
+        const db = request.result;
+        // Additive only: existing "pages" data is never touched or migrated.
+        if (!db.objectStoreNames.contains(STORE_NAME))
+          db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        if (!db.objectStoreNames.contains(IMPORT_STORE))
+          db.createObjectStore(IMPORT_STORE, { keyPath: "fileHash" });
+        if (!db.objectStoreNames.contains(CHECKPOINT_STORE))
+          db.createObjectStore(CHECKPOINT_STORE, { keyPath: "key" });
       };
       request.onerror = () => {
         clearTimeout(timer);
@@ -4635,6 +4981,32 @@
       };
     });
   }
+  // What is currently on disk, so saves can be incremental.
+  // Named to avoid colliding with the saved-signature feature above.
+  const onDiskIds = new Set();
+  const onDiskSignatures = new Map();
+  const pendingSignatures = new Map();
+  function pageSignature(page) {
+    return [
+      page.id,
+      page.order,
+      page.filter,
+      (page.final || "").length,
+      (page.cropped || "").length,
+      (page.original || "").length,
+      JSON.stringify(page.filterSettings || {}),
+      JSON.stringify(page.annotations || []),
+    ].join("|");
+  }
+  function rememberSaved() {
+    onDiskIds.clear();
+    onDiskSignatures.clear();
+    documentPages.forEach((page) => {
+      onDiskIds.add(page.id);
+      onDiskSignatures.set(page.id, pageSignature(page));
+    });
+  }
+
   async function saveToDB() {
     if (!storageReadable)
       throw new Error(
@@ -4649,8 +5021,22 @@
           reject(tx.error || new Error("Storage transaction failed."));
         try {
           const store = tx.objectStore(STORE_NAME);
-          store.clear();
-          documentPages.forEach((page, order) => store.put({ ...page, order }));
+          // Incremental: only write what changed, and delete ids that are gone.
+          // Rewriting the whole library on every save meant a 100-page import
+          // rewrote ~340 MB per tap and could not survive a crash mid-write.
+          const keep = new Set(documentPages.map((page) => page.id));
+          documentPages.forEach((page, order) => {
+            const next = { ...page, order };
+            const previous = onDiskSignatures.get(page.id);
+            const signature = pageSignature(next);
+            if (previous !== signature) {
+              store.put(next);
+              pendingSignatures.set(page.id, signature);
+            }
+          });
+          onDiskIds.forEach((id) => {
+            if (!keep.has(id)) store.delete(id);
+          });
         } catch (error) {
           tx.abort();
           reject(error);
@@ -4666,6 +5052,12 @@
     $("save-status").textContent = "Saving…";
     try {
       await saveToDB();
+      pendingSignatures.forEach((signature, id) =>
+        onDiskSignatures.set(id, signature),
+      );
+      pendingSignatures.clear();
+      onDiskIds.clear();
+      documentPages.forEach((page) => onDiskIds.add(page.id));
       storageAvailable = true;
       $("save-status").textContent = "Saved on this device";
       return true;
@@ -4696,6 +5088,8 @@
           reject(tx.error || new Error("Could not read saved pages."));
       });
       documentPages = pages.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      // Prime the incremental-save bookkeeping with what is already on disk.
+      rememberSaved();
       if (documentPages.length) {
         renderGallery();
         showView("gallery-view");
@@ -4855,6 +5249,14 @@
     dirty = !saved;
     renderGallery();
   }
+  // Cancel stops the loop at the next page boundary; pages already saved stay.
+  $("btn-cancel-import")?.addEventListener("click", () => {
+    if (!activeImport) return;
+    importCancelled = true;
+    const text = $("import-progress-text");
+    if (text) text.textContent = "Stopping after this page…";
+  });
+
   $("move-confirm")?.addEventListener("click", applyMovePosition);
   $("move-cancel")?.addEventListener("click", () => {
     moveTargetId = null;

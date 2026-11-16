@@ -13,7 +13,7 @@ Nothing is uploaded — there is no backend, no account, no API key and no build
 
 | Stage | Tools |
 | --- | --- |
-| Import | Drop or choose JPEG, PNG, WebP or PDF. Multi-page PDFs import all pages at once (up to 30). |
+| Import | Drop or choose JPEG, PNG, WebP or PDF. PDFs import 100 pages per pick with no overall limit — pick the same file again to pull the next 100, or to resume after a crash. |
 | Crop | Drag four corner handles, with a magnifier, live pixel readout and one-tap reset. |
 | Filters | Original, Auto, Lighten, No Shadow, Magic Color, Magic Pro, Grayscale, B&W, Soft B&W, Enhance, Eco, plus strength, brightness, contrast and sharpness. |
 | Erase | Pen, rectangle, patch area and copy-texture tools with adjustable brush size. |
@@ -65,6 +65,11 @@ deploy and existing users get an in-app update prompt — never a surprise reloa
 - Files up to 35 MB. The working image's longest edge is capped at 2800 px for
   mobile memory safety; imported PDF pages are rendered at 2200 px (1800 px above
   10 pages).
+- There is no cap on how many pages a document can hold. Each PDF *pick* imports
+  up to 100 pages, because every page keeps three copies of its image (original,
+  cropped, final) at roughly 3.4 MB — about 340 MB per 100 pages. When storage
+  runs low the import stops at what fits, tells you how many pages it kept, and
+  keeps a resume point; picking the same file again continues where it stopped.
 - **Merged exports are raster:** pages are re-encoded as images, so text in the
   exported PDF is not selectable. Searchable OCR is not enabled in this release.
 - Erase and patch tools estimate a plausible background. They are **not**

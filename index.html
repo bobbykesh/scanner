@@ -128,6 +128,15 @@
         <button id="btn-retry" class="tool-btn primary" hidden>
           Reload app
         </button>
+        <div id="import-progress" class="import-progress" hidden>
+          <div class="import-bar"><i id="import-progress-fill"></i></div>
+          <div class="import-row">
+            <span id="import-progress-text">Importing…</span>
+            <button type="button" id="btn-cancel-import" class="tool-btn">
+              Cancel import
+            </button>
+          </div>
+        </div>
       </div>
       <div
         id="status-message"
@@ -1173,6 +1182,25 @@
             Free memory
           </button>
         </div>
+      </div>
+    </dialog>
+    <dialog id="resume-modal" class="modal resume-modal" aria-labelledby="resume-title">
+      <div class="modal-content">
+        <h3 id="resume-title">Continue this document?</h3>
+        <p id="resume-body" class="footnote"></p>
+        <div class="resume-actions">
+          <button type="button" id="resume-continue" class="tool-btn primary">
+            Continue
+          </button>
+          <button type="button" id="resume-restart" class="tool-btn">
+            Start over from page 1
+          </button>
+          <button type="button" id="resume-cancel" class="tool-btn">Cancel</button>
+        </div>
+        <p class="footnote">
+          Starting over removes the pages already imported from this file, so you
+          do not end up with duplicates.
+        </p>
       </div>
     </dialog>
     <dialog id="move-modal" class="modal move-modal" aria-labelledby="move-title">

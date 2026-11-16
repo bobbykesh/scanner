@@ -3361,3 +3361,66 @@ input[type="range"]::-moz-range-thumb {
   .card-actions button:nth-child(3) { grid-row: 2; grid-column: 1; }
   .card-actions button:nth-child(4) { grid-row: 2; grid-column: 2; }
 }
+
+/* --- Chunked PDF import: progress + cancel ----------------------- */
+.import-progress {
+  width: min(420px, 86vw);
+  margin-top: 14px;
+  text-align: left;
+}
+.import-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+  overflow: hidden;
+}
+.import-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s var(--ease);
+}
+.import-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+.import-row span {
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.import-row .tool-btn {
+  min-height: var(--tap-min);
+  padding: 0 14px;
+  font-size: var(--fs-label);
+}
+
+/* --- Resume prompt ---------------------------------------------- */
+.resume-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.resume-modal h3 {
+  margin: 0;
+}
+.resume-modal .footnote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: 1.45;
+}
+.resume-actions {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0;
+}
+.resume-actions .tool-btn {
+  min-height: 48px;
+  width: 100%;
+}
