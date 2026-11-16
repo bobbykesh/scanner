@@ -16,6 +16,7 @@
     <link rel="manifest" href="manifest.json" />
     <link rel="stylesheet" href="style.css" />
     <script defer src="vendor/jspdf-2.5.1.umd.min.js"></script>
+    <script defer src="vendor/pdf-3.11.174.min.js"></script>
     <script defer src="vision.js"></script>
     <script defer src="filter-client.js"></script>
     <script defer src="paper-match.js"></script>
@@ -128,10 +129,15 @@
         <button class="drop-zone" id="drop-zone" disabled>
           <span class="upload-icon" aria-hidden="true">▣</span>
           <strong>Import Document</strong>
-          <span>Choose an image or drop it here</span>
-          <small>JPEG, PNG or WebP · processed on this device</small>
+          <span>Choose an image or PDF, or drop it here</span>
+          <small>JPEG, PNG, WebP or PDF · processed on this device</small>
         </button>
-        <input type="file" id="file-input" hidden accept="image/*" />
+        <input
+          type="file"
+          id="file-input"
+          hidden
+          accept="image/*,application/pdf,.pdf"
+        />
         <button id="btn-return-gallery" class="tool-btn" hidden>
           Back to document
         </button>
@@ -198,7 +204,8 @@
             </button>
           </div>
           <div class="tool-group">
-            <button id="btn-rotate" class="tool-btn">Rotate</button
+            <button id="btn-recrop" class="tool-btn">Crop</button
+            ><button id="btn-rotate" class="tool-btn">Rotate</button
             ><button id="btn-save-page" class="tool-btn success">
               Add to Doc</button
             ><button id="btn-back" class="tool-btn">Back</button>

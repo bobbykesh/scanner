@@ -32,8 +32,12 @@
   let currentFilterSettings = FilterProcessor.defaults("original");
   let filterPreviewTimer = null,
     thumbnailEpoch = 0;
+  let currentSourceIsPdf = false,
+    recropReturnView = null,
+    pdfWorkerFallbackLoaded = false;
   const MAX_EDGE = 2800,
-    MAX_FILE_BYTES = 35 * 1024 * 1024;
+    MAX_FILE_BYTES = 35 * 1024 * 1024,
+    MAX_PDF_PAGES = 30;
   const VIEW_IDS = ["upload-area", "crop-view", "process-view", "gallery-view"];
 
   function notice(message, error = false) {
@@ -94,6 +98,137 @@
       reader.onabort = () => reject(new Error("File read cancelled."));
       reader.readAsDataURL(file);
     });
+  }
+  function readFileBuffer(file) {
+    if (typeof file.arrayBuffer === "function") return file.arrayBuffer();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () =>
+        reject(reader.error || new Error("File read failed."));
+      reader.onabort = () => reject(new Error("File read cancelled."));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  function isPdfFile(file) {
+    if (!file) return false;
+    const type = String(file.type || "").toLowerCase();
+    if (type === "application/pdf" || type === "application/x-pdf") return true;
+    return /\.pdf$/i.test(file.name || "");
+  }
+  function isImageFile(file) {
+    if (!file) return false;
+    const type = String(file.type || "").toLowerCase();
+    if (type.startsWith("image/")) return true;
+    if (
+      (!type || type === "application/octet-stream") &&
+      /\.(jpe?g|png|webp|gif|bmp|avif|heic|heif)$/i.test(file.name || "")
+    )
+      return true;
+    return false;
+  }
+  async function openPdfDocument(arrayBuffer) {
+    if (!window.pdfjsLib?.getDocument)
+      throw new Error(
+        "The local PDF reader library could not be loaded. Check vendor/pdf-3.11.174.min.js and reload.",
+      );
+    if (window.pdfjsLib.GlobalWorkerOptions) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "vendor/pdf.worker-3.11.174.min.js",
+        document.baseURI,
+      ).href;
+    }
+    const makeTask = (disableWorker) =>
+      window.pdfjsLib.getDocument({
+        data: new Uint8Array(arrayBuffer.slice(0)),
+        isEvalSupported: false,
+        useSystemFonts: true,
+        disableFontFace: false,
+        disableWorker,
+      });
+    try {
+      return await makeTask(false).promise;
+    } catch (error) {
+      if (
+        error?.name === "PasswordException" ||
+        /password|encrypted/i.test(error?.message || "")
+      )
+        throw new Error(
+          "This PDF is password-protected. Remove the password and try again.",
+        );
+      if (
+        error?.name === "InvalidPDFException" ||
+        error?.name === "MissingPDFException" ||
+        /invalid pdf|missing pdf/i.test(error?.message || "")
+      )
+        throw new Error(
+          "Cannot read this PDF file. Check that it is a valid, unencrypted PDF.",
+        );
+      if (!pdfWorkerFallbackLoaded && !window.pdfjsWorker) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "./vendor/pdf.worker-3.11.174.min.js";
+          s.onload = () => {
+            pdfWorkerFallbackLoaded = true;
+            resolve();
+          };
+          s.onerror = () =>
+            reject(
+              new Error(
+                "Could not load vendor/pdf.worker-3.11.174.min.js. Check the uploaded vendor folder.",
+              ),
+            );
+          document.head.appendChild(s);
+        });
+      }
+      try {
+        return await makeTask(true).promise;
+      } catch (fallbackError) {
+        if (
+          fallbackError?.name === "PasswordException" ||
+          /password|encrypted/i.test(fallbackError?.message || "")
+        )
+          throw new Error(
+            "This PDF is password-protected. Remove the password and try again.",
+          );
+        throw new Error(
+          "Cannot read this PDF file. Check that it is a valid, unencrypted PDF.",
+        );
+      }
+    }
+  }
+  async function renderPdfPageToCanvas(pdfDoc, pageNumber, maxEdge) {
+    const page = await pdfDoc.getPage(pageNumber);
+    try {
+      const baseViewport = page.getViewport({ scale: 1 });
+      const maxBaseDim = Math.max(
+        1,
+        baseViewport.width || 1,
+        baseViewport.height || 1,
+      );
+      const targetEdge = Math.min(maxEdge, Math.max(1600, maxBaseDim * 2.5));
+      const scale = Math.min(
+        maxEdge / maxBaseDim,
+        Math.max(1, targetEdge / maxBaseDim),
+      );
+      const viewport = page.getViewport({ scale });
+      const rendered = document.createElement("canvas");
+      rendered.width = Math.max(2, Math.round(viewport.width));
+      rendered.height = Math.max(2, Math.round(viewport.height));
+      const ctx = rendered.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, rendered.width, rendered.height);
+      await page.render({
+        canvasContext: ctx,
+        viewport,
+        background: "rgb(255,255,255)",
+      }).promise;
+      return rendered;
+    } finally {
+      try {
+        page.cleanup();
+      } catch (_) {}
+    }
   }
   async function runTask(message, task) {
     if (busy || saving) return false;
@@ -164,12 +299,34 @@
       .drawImage(currentImage, 0, 0, proxyImage.width, proxyImage.height);
   }
   function defaultCorners() {
+    if (currentSourceIsPdf) {
+      return [
+        { x: 0, y: 0 },
+        { x: currentImage.width - 1, y: 0 },
+        { x: currentImage.width - 1, y: currentImage.height - 1 },
+        { x: 0, y: currentImage.height - 1 },
+      ];
+    }
     return [
       { x: currentImage.width * 0.05, y: currentImage.height * 0.05 },
       { x: currentImage.width * 0.95, y: currentImage.height * 0.05 },
       { x: currentImage.width * 0.95, y: currentImage.height * 0.95 },
       { x: currentImage.width * 0.05, y: currentImage.height * 0.95 },
     ];
+  }
+  function isFullPageCorners(points, width, height) {
+    if (!Array.isArray(points) || points.length !== 4) return false;
+    const expected = [
+      { x: 0, y: 0 },
+      { x: width - 1, y: 0 },
+      { x: width - 1, y: height - 1 },
+      { x: 0, y: height - 1 },
+    ];
+    return expected.every(
+      (p, i) =>
+        Math.abs(points[i].x - p.x) < 0.5 &&
+        Math.abs(points[i].y - p.y) < 0.5,
+    );
   }
   function initStudio() {
     canvas.width = currentImage.width;
@@ -184,11 +341,105 @@
   async function importFile(file) {
     if (!file || busy || saving || !visionReady) return;
     const version = ++importVersion;
-    await runTask("Opening document…", async () => {
-      if (file.type && !file.type.startsWith("image/"))
-        throw new Error("Choose an image file.");
+    const pdfUpload = isPdfFile(file);
+    await runTask(pdfUpload ? "Opening PDF…" : "Opening document…", async () => {
+      if (!pdfUpload && !isImageFile(file))
+        throw new Error("Choose an image or PDF file.");
       if (file.size > MAX_FILE_BYTES)
-        throw new Error("Choose an image smaller than 35 MB.");
+        throw new Error("Choose a file smaller than 35 MB.");
+      if (pdfUpload) {
+        const buffer = await readFileBuffer(file);
+        if (version !== importVersion) return;
+        const pdfDoc = await openPdfDocument(buffer);
+        try {
+          if (version !== importVersion) return;
+          const totalPages = pdfDoc.numPages || 0;
+          if (totalPages < 1)
+            throw new Error("This PDF file contains no pages.");
+          if (totalPages > MAX_PDF_PAGES)
+            throw new Error(
+              `This PDF has ${totalPages} pages. Import a PDF with up to ${MAX_PDF_PAGES} pages at a time for device memory safety.`,
+            );
+          if (totalPages === 1) {
+            setLoading("Rendering PDF page…");
+            const rendered = await renderPdfPageToCanvas(
+              pdfDoc,
+              1,
+              MAX_EDGE,
+            );
+            if (version !== importVersion) return;
+            currentImage = rendered;
+            currentSourceIsPdf = true;
+            recropReturnView = null;
+            initProxy();
+            activePageId = null;
+            currentFilter = "original";
+            currentFilterSettings = FilterProcessor.defaults("original");
+            clearEditUndo();
+            syncFilters(currentFilter);
+            markDirty();
+            $("btn-save-page").textContent = "Add to Doc";
+            initStudio();
+            notice(
+              "PDF page opened at full bounds. Adjust the four corners to crop, or tap Flatten & Process to edit filters, erase or save.",
+            );
+          } else {
+            const pageMaxEdge = totalPages <= 10 ? 2200 : 1800;
+            const importedPages = [];
+            for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+              if (version !== importVersion) return;
+              setLoading(
+                `Rendering PDF page ${pageNum} of ${totalPages}…`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              const rendered = await renderPdfPageToCanvas(
+                pdfDoc,
+                pageNum,
+                pageMaxEdge,
+              );
+              try {
+                const pngDataUrl = rendered.toDataURL("image/png");
+                const origDataUrl = rendered.toDataURL("image/jpeg", 0.95);
+                importedPages.push({
+                  stage1Version: 1,
+                  stage2Version: 1,
+                  stage3Version: 1,
+                  stage32Version: 1,
+                  fromPdf: true,
+                  filterSettings: { ...FilterProcessor.defaults("original") },
+                  id: crypto.randomUUID
+                    ? crypto.randomUUID()
+                    : `${Date.now()}-${Math.random()}-${pageNum}`,
+                  original: origDataUrl,
+                  cropped: pngDataUrl,
+                  filter: "original",
+                  final: pngDataUrl,
+                });
+              } finally {
+                rendered.width = rendered.height = 1;
+              }
+            }
+            if (version !== importVersion) return;
+            recropReturnView = null;
+            documentPages.push(...importedPages);
+            const saved = await persist();
+            dirty = !saved;
+            renderGallery();
+            showView("gallery-view");
+            notice(
+              `Imported ${importedPages.length} pages from PDF. Tap any page to edit, filter, crop or erase, or use Export / Share PDF.`,
+            );
+          }
+        } finally {
+          try {
+            await pdfDoc.cleanup();
+          } catch (_) {}
+          try {
+            await pdfDoc.destroy();
+          } catch (_) {}
+        }
+        return;
+      }
       const image = await loadImage(await readFile(file));
       if (version !== importVersion) return;
       const scale = Math.min(
@@ -203,6 +454,8 @@
       ctx.fillRect(0, 0, normalized.width, normalized.height);
       ctx.drawImage(image, 0, 0, normalized.width, normalized.height);
       currentImage = normalized;
+      currentSourceIsPdf = false;
+      recropReturnView = null;
       initProxy();
       activePageId = null;
       currentFilter = "original";
@@ -393,6 +646,11 @@
     markDirty();
   });
   $("btn-cancel-crop").addEventListener("click", () => {
+    if (recropReturnView === "process-view") {
+      recropReturnView = null;
+      showView("process-view");
+      return;
+    }
     if (dirty && !confirm("Discard this unsaved scan?")) return;
     dirty = false;
     showView(documentPages.length ? "gallery-view" : "upload-area");
@@ -401,7 +659,15 @@
     const ok = await runTask("Flattening document…", async () => {
       const nextBase = document.createElement("canvas"),
         nextFinal = document.createElement("canvas");
-      VisionEngine.warpPerspective(currentImage, corners, nextBase);
+      if (
+        currentSourceIsPdf &&
+        isFullPageCorners(corners, currentImage.width, currentImage.height)
+      ) {
+        VisionEngine.validateCorners(corners);
+        copy(currentImage, nextBase);
+      } else {
+        VisionEngine.warpPerspective(currentImage, corners, nextBase);
+      }
       await renderFilter(
         nextBase,
         nextFinal,
@@ -413,8 +679,10 @@
       clearEditUndo();
       markDirty();
     });
-    if (ok) showView("process-view");
-    else updatePreview();
+    if (ok) {
+      recropReturnView = null;
+      showView("process-view");
+    } else updatePreview();
   });
 
   // All preset/adjustment processing is asynchronous and runs in the worker.
@@ -799,6 +1067,30 @@
     }
   });
 
+  $("btn-recrop").addEventListener("click", () => {
+    if (busy || saving || eraseActive || filterSession || !currentImage) return;
+    if (activePageId !== null) {
+      if (
+        dirty &&
+        !confirm(
+          "Re-cropping starts from this page's original source image and replaces unsaved edits. Continue?",
+        )
+      )
+        return;
+      recropReturnView = "process-view";
+      initStudio();
+    } else {
+      if (
+        dirty &&
+        editUndo &&
+        !confirm(
+          "Return to crop? Reprocessing will replace your unsaved filter or erase edits.",
+        )
+      )
+        return;
+      showView("crop-view");
+    }
+  });
   $("btn-rotate").addEventListener("click", async () => {
     await runTask("Rotating document…", () => {
       const base = clone(bufferCanvas),
@@ -1820,6 +2112,7 @@
         stage2Version: 1,
         stage3Version: 1,
         stage32Version: 1,
+        ...(currentSourceIsPdf || existing?.fromPdf ? { fromPdf: true } : {}),
         filterSettings: { ...currentFilterSettings },
         id:
           existing?.id ??
@@ -1906,6 +2199,8 @@
         loadImage(page.final),
       ]);
       currentImage = clone(original);
+      currentSourceIsPdf = !!page.fromPdf;
+      recropReturnView = null;
       initProxy();
       copy(base, bufferCanvas);
       copy(result, finalCanvas);

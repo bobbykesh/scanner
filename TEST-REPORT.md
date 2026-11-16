@@ -1,6 +1,16 @@
-# Stage 4.2 verification — 13 November 2026
+# Stage 4.2 + Local PDF Import verification — 16 November 2026
 
-Non-AI local repair + Clone release, built from locked Stage 4.1. The Stage 4.1 folder/archive are unchanged. No model weights, AI runtime, server/API or production deployment added.
+Non-AI local repair + Clone + local PDF upload release. No model weights, AI runtime, server/API or external CDN dependency added.
+
+## New Local PDF Import checks — PASS
+
+- Bundled `vendor/pdf-3.11.174.min.js` and `vendor/pdf.worker-3.11.174.min.js` load locally with zero external network calls and are precached by `sw.js`.
+- Single-page PDF upload via `#file-input` and drag-and-drop opens `crop-view` with full-page default corners (`0%` to `100%`), preserves full page pixels on `Flatten & Process`, supports all Filters and Erase tools (`Pen`, `Rectangle`, `Local repair`, `Clone`), and saves to `Document Stack`.
+- Multi-page PDF upload renders all pages locally with progress updates and imports them into `Document Stack` (`#gallery-view`) and IndexedDB (`ProScanDB`).
+- Opening any imported PDF page from `Document Stack` allows filtering, erasing, rotating, or clicking `Crop` (`#btn-recrop`) to perspective-crop that page (with non-destructive `Cancel` back to `process-view`) and `Update Page` in place.
+- `Compress & Share` (`#btn-share`) and `Export` (`#btn-export-trigger`) process combined image and PDF-imported pages without error.
+- Invalid/corrupted PDF files and password-protected PDFs fail cleanly with descriptive user notices while leaving existing pages intact.
+- Offline reload and offline PDF upload pass after service-worker installation.
 
 ## New Chromium checks — PASS
 

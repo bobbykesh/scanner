@@ -1,6 +1,13 @@
-# ProScan Studio — Complete Stage 4.2
+# ProScan Studio — Complete Stage 4.2 (with Local PDF Import)
 
-Full replacement files for the existing scanner. This release adds **bounded non-AI repair previews and a Clone tool**, while preserving edge-to-edge PDFs, worker filters, manual editing, saved-page compatibility and Compress & Share. No build step, API key or backend is required.
+Full replacement files for the existing scanner. This release adds **local PDF upload and import (single-page and multi-page PDFs)** alongside **bounded non-AI repair previews and a Clone tool**, while preserving edge-to-edge PDFs, worker filters, manual editing, saved-page compatibility and Compress & Share. No build step, API key or backend is required.
+
+## New — Local PDF Upload & Import
+
+1. From **Import Document** (or **Add Page** in Document Stack), choose or drag-and-drop a **PDF file** (`.pdf`) in addition to JPEG, PNG or WebP images.
+2. **Single-page PDFs** open directly in the **Manual Crop** studio with the four corners initialized to the full page bounds (`0,0` to `width-1,height-1`) so margins are not clipped unless you move the handles. Drag the corners to crop if needed, or tap **Flatten & Process** to keep the exact full page and proceed to **Filters** and **Erase tools** (`Pen`, `Rectangle`, `Local repair`, `Clone`).
+3. **Multi-page PDFs** (up to 30 pages per import, up to 35 MB) render locally page-by-page and import directly into your **Document Stack**. Tap any imported page (`Page X · Edit`) to apply **Filters**, **Erase tools**, **Rotate**, or tap **Crop** to perspective-crop that individual page and **Update Page** in place. You can also immediately use **Export** or **Share PDF** (**Compress & Share**) on the imported PDF.
+4. PDF rendering runs 100% on-device using bundled **PDF.js 3.11.174** (`vendor/pdf-3.11.174.min.js` and `vendor/pdf.worker-3.11.174.min.js`), precached by the service worker for offline use and with an automatic main-thread fallback if worker startup is blocked.
 
 ## New in 4.2 — non-AI repair preview and Clone
 
@@ -119,14 +126,19 @@ THIRD-PARTY.md
 vendor/
     opencv-4.5.4.js
     jspdf-2.5.1.umd.min.js
+    pdf-3.11.174.min.js
+    pdf.worker-3.11.174.min.js
     LICENSE-OpenCV.txt
     LICENSE-jsPDF.txt
+    LICENSE-PDFjs.txt
 ```
 
-For your current deployment, these two URLs must return JavaScript, not 404 or HTML:
+For your current deployment, these vendor URLs must return JavaScript, not 404 or HTML:
 
-- `https://bobbykesh.github.io/ai/vendor/opencv-4.5.4.js`
-- `https://bobbykesh.github.io/ai/vendor/jspdf-2.5.1.umd.min.js`
+- `https://bobbykesh.github.io/scanner/vendor/opencv-4.5.4.js`
+- `https://bobbykesh.github.io/scanner/vendor/jspdf-2.5.1.umd.min.js`
+- `https://bobbykesh.github.io/scanner/vendor/pdf-3.11.174.min.js`
+- `https://bobbykesh.github.io/scanner/vendor/pdf.worker-3.11.174.min.js`
 
 This OpenCV file embeds its WebAssembly binary; it does not require a separate `.wasm` upload.
 

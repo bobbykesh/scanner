@@ -1,7 +1,7 @@
 "use strict";
 // Bump this version whenever you deploy updated application files.
 const CACHE_PREFIX = "proscan-studio-";
-const CACHE_NAME = `${CACHE_PREFIX}stage4-2-2026-11-13-1`;
+const CACHE_NAME = `${CACHE_PREFIX}stage4-2-pdf-2026-11-16-1`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -20,6 +20,8 @@ const ASSETS = [
   "./icon-512.png",
   "./vendor/opencv-4.5.4.js",
   "./vendor/jspdf-2.5.1.umd.min.js",
+  "./vendor/pdf-3.11.174.min.js",
+  "./vendor/pdf.worker-3.11.174.min.js",
 ];
 self.addEventListener("install", (event) => {
   event.waitUntil(
