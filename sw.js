@@ -1,7 +1,7 @@
 "use strict";
 // Bump this version whenever you deploy updated application files.
 const CACHE_PREFIX = "keshscan-studio-";
-const CACHE_NAME = `${CACHE_PREFIX}import-2026-11-16-2`;
+const CACHE_NAME = `${CACHE_PREFIX}delete-all-2026-11-16-3`;
 const ASSETS = [
   "./",
   "./index.html",

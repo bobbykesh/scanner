@@ -619,6 +619,11 @@
   async function deleteImportRecord(hash) {
     await withStore(IMPORT_STORE, "readwrite", (store) => store.delete(hash));
   }
+  async function listImportRecords() {
+    return withStore(IMPORT_STORE, "readonly", (store) =>
+      requestResult(store.getAll()),
+    );
+  }
 
   async function pageBytesAvailable() {
     try {
@@ -5198,6 +5203,11 @@
     });
     $("btn-export-trigger").disabled = $("btn-share").disabled =
       !documentPages.length;
+    const deleteAll = $("btn-delete-all");
+    if (deleteAll) {
+      deleteAll.hidden = !documentPages.length;
+      deleteAll.disabled = !documentPages.length;
+    }
   }
   async function editPage(id) {
     const page = documentPages.find((item) => item.id === id);
@@ -5249,6 +5259,62 @@
     dirty = !saved;
     renderGallery();
   }
+  // Delete All is unrecoverable, so it asks first and always leaves the user
+  // on a usable screen (the empty stack) rather than dead-ending.
+  function askClearAll() {
+    const dialog = $("clear-modal");
+    const count = documentPages.length;
+    if (!dialog) return Promise.resolve(confirm(`Delete all ${count} pages?`));
+    const edited = documentPages.filter(
+      (page) => (page.annotations && page.annotations.length) || page.edited,
+    ).length;
+    $("clear-body").textContent =
+      count === 1
+        ? "The only page in this document will be removed from this device. This cannot be undone."
+        : `All ${count} pages will be removed from this device. This cannot be undone.` +
+          (edited ? ` ${edited} of them have edits.` : "");
+    return new Promise((resolve) => {
+      const finish = (choice) => {
+        dialog.close();
+        resolve(choice);
+      };
+      $("clear-confirm").onclick = () => finish("confirm");
+      $("clear-cancel").onclick = () => finish("cancel");
+      dialog.oncancel = (event) => {
+        event.preventDefault();
+        finish("cancel");
+      };
+      dialog.showModal();
+    });
+  }
+  async function deleteAllPages() {
+    if (busy || saving || !documentPages.length) return;
+    if ((await askClearAll()) !== "confirm") return;
+    const cleared = documentPages.length;
+    documentPages = [];
+    clearEditUndo();
+    activePageId = null;
+    const saved = await persist();
+    // Every page is gone, so any file fingerprint that started these pages is
+    // stale: forgetting it means re-picking the PDF imports it from page 1
+    // rather than offering to resume at a page that no longer exists.
+    try {
+      const records = await listImportRecords();
+      await Promise.all(
+        (records || []).map((record) => clearCheckpoints(record.fileHash)),
+      );
+      await withStore(IMPORT_STORE, "readwrite", (store) => store.clear());
+    } catch (error) {
+      // Losing the markers is not worth failing the delete over.
+      console.warn("Could not clear import records", error);
+    }
+    dirty = !saved;
+    renderGallery();
+    showView("gallery-view");
+    notice(
+      `Deleted ${cleared} page${cleared === 1 ? "" : "s"}. Add a page to start a new document.`,
+    );
+  }
   // Cancel stops the loop at the next page boundary; pages already saved stay.
   $("btn-cancel-import")?.addEventListener("click", () => {
     if (!activeImport) return;
@@ -5256,6 +5322,8 @@
     const text = $("import-progress-text");
     if (text) text.textContent = "Stopping after this page…";
   });
+
+  $("btn-delete-all")?.addEventListener("click", deleteAllPages);
 
   $("move-confirm")?.addEventListener("click", applyMovePosition);
   $("move-cancel")?.addEventListener("click", () => {

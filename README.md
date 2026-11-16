@@ -20,6 +20,7 @@ Nothing is uploaded — there is no backend, no account, no API key and no build
 | Add Text | Text matched to the document's own font, weight, size and ink — placed as an editable object. |
 | Sign | Draw on a full-screen pad, or scan / upload a signature. Black, blue or charcoal ink, reusable on later pages. |
 | Document stack | Reorder any page to any position, delete, reopen and keep editing. |
+| Document stack | Pages can be reordered, deleted one at a time, or cleared completely with **Delete All**, which asks for confirmation first. |
 | Export | One merged PDF (or JPEG / PNG), edge-to-edge or fitted to A4, with a choice of compression. Share it with the native share sheet. |
 
 Added text and signatures are **non-destructive objects**: tap a placed object to
