@@ -1473,3 +1473,381 @@ body.erasing .pan-mode:active #canvas-mask {
 .erase-sheet.precision-tools .cover-match-note {
   display: none;
 }
+
+/* Text & Signature studio panels and modals */
+body.text-editing,
+body.sig-editing {
+  overflow: hidden;
+}
+body.text-editing .bottom-toolbar,
+body.sig-editing .bottom-toolbar {
+  display: none;
+}
+body.text-editing .processed-stage,
+body.sig-editing .processed-stage {
+  position: fixed;
+  top: var(--erase-editor-top, 80px);
+  bottom: calc(var(--erase-sheet-height, 270px) + 12px);
+  left: 12px;
+  right: 12px;
+  min-height: 0;
+  padding: 8px;
+  overflow: hidden;
+  touch-action: none;
+  z-index: 40;
+}
+body.text-editing .processed-stage .canvas-wrapper,
+body.sig-editing .processed-stage .canvas-wrapper {
+  max-height: 100%;
+  transform-origin: center;
+  will-change: transform;
+}
+body.text-editing #canvas-final,
+body.sig-editing #canvas-final {
+  max-height: calc(
+    100dvh - var(--erase-sheet-height, 270px) - var(--erase-editor-top, 80px) -
+      40px
+  );
+}
+body.text-editing #canvas-mask,
+body.sig-editing #canvas-mask {
+  pointer-events: auto;
+  cursor: move;
+}
+body.text-editing.sampling-mode #canvas-mask {
+  cursor: crosshair;
+}
+.editor-view-controls .tool-btn[aria-pressed="true"] {
+  background: var(--primary);
+  color: #fff;
+}
+.text-editor-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.text-input-row textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 46px;
+  max-height: 90px;
+}
+.text-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  flex: 1 1 130px;
+  min-width: 100px;
+}
+.text-field select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  color: var(--text-main);
+  font-size: 0.78rem;
+}
+.text-size-field {
+  flex: 1 1 140px;
+}
+.text-size-field > span {
+  display: flex;
+  justify-content: space-between;
+}
+.text-size-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+}
+.text-color-field {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+.text-color-field input[type="color"] {
+  width: 40px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  background: var(--bg-dark);
+}
+.text-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.74rem;
+  padding: 4px 0;
+}
+.text-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.text-inline-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex: 1 1 130px;
+}
+.text-inline-slider input[type="range"] {
+  flex: 1;
+  min-width: 60px;
+  accent-color: var(--primary);
+}
+#text-match-badge,
+#sig-status-badge {
+  font-size: 0.72rem;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.light-theme #text-match-badge,
+.light-theme #sig-status-badge {
+  color: #006b61;
+}
+
+/* Signature placement panel & modals */
+.sig-placement-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.sig-ink-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.sig-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+.sig-ink-btn {
+  padding: 5px 10px;
+  min-height: 32px;
+  font-size: 0.74rem;
+}
+.sig-ink-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+.sig-sliders-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.modal.sig-source-modal,
+.modal.sig-crop-modal {
+  width: min(95vw, 560px);
+  max-height: 92dvh;
+}
+.sig-pad-wrapper {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+  margin: 10px 0;
+  touch-action: none;
+}
+#sig-draw-canvas {
+  display: block;
+  width: 100%;
+  height: 180px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.sig-pad-baseline {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 34px;
+  border-top: 1px dashed #94a3b8;
+  padding-top: 4px;
+  font-size: 0.68rem;
+  color: #64748b;
+  text-align: center;
+  pointer-events: none;
+}
+.sig-draw-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.sig-draw-controls .tool-btn {
+  padding: 7px 11px;
+  min-height: 36px;
+  font-size: 0.78rem;
+}
+.sig-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.sig-divider::before,
+.sig-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+.sig-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+.sig-import-actions .tool-btn {
+  flex: 1 1 200px;
+}
+.sig-crop-stage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.sig-crop-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  touch-action: none;
+  user-select: none;
+}
+#sig-crop-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 34dvh;
+  width: auto;
+  height: auto;
+}
+.sig-crop-box {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.52);
+  cursor: move;
+  touch-action: none;
+}
+.sig-crop-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2.5px solid #fff;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+.sig-crop-handle[data-corner="tl"] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.sig-crop-handle[data-corner="tr"] {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+.sig-crop-handle[data-corner="br"] {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+.sig-crop-handle[data-corner="bl"] {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+.sig-crop-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.sig-crop-controls .tool-btn {
+  padding: 6px 10px;
+  min-height: 34px;
+  font-size: 0.75rem;
+}
+.sig-transparent-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+.sig-checkerboard {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 76px;
+  max-height: 110px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: #f8fafc;
+  background-image:
+    linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  overflow: hidden;
+}
+#sig-clean-preview-canvas {
+  max-width: 100%;
+  max-height: 90px;
+  width: auto;
+  height: auto;
+  display: block;
+}
+@media (max-width: 600px) {
+  .text-field {
+    flex: 1 1 105px;
+  }
+  .text-input-row textarea {
+    min-height: 40px;
+    font-size: 0.8rem;
+  }
+  #sig-draw-canvas {
+    height: 150px;
+  }
+}
+

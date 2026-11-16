@@ -24,6 +24,8 @@
   let editUndo = null,
     filterSession = null,
     eraseActive = false,
+    textActive = false,
+    signatureActive = false,
     drawing = null;
   let eraseTool = "pen",
     updateRegistration = null,
@@ -875,7 +877,15 @@
     }, delay);
   }
   $("btn-open-filters").addEventListener("click", () => {
-    if (busy || saving || eraseActive || filterSession) return;
+    if (
+      busy ||
+      saving ||
+      eraseActive ||
+      textActive ||
+      signatureActive ||
+      filterSession
+    )
+      return;
     const previous = clone(finalCanvas);
     filterSession = {
       previous,
@@ -1068,7 +1078,16 @@
   });
 
   $("btn-recrop").addEventListener("click", () => {
-    if (busy || saving || eraseActive || filterSession || !currentImage) return;
+    if (
+      busy ||
+      saving ||
+      eraseActive ||
+      textActive ||
+      signatureActive ||
+      filterSession ||
+      !currentImage
+    )
+      return;
     if (activePageId !== null) {
       if (
         dirty &&
@@ -1092,6 +1111,7 @@
     }
   });
   $("btn-rotate").addEventListener("click", async () => {
+    if (eraseActive || textActive || signatureActive || filterSession) return;
     await runTask("Rotating document…", () => {
       const base = clone(bufferCanvas),
         result = clone(finalCanvas);
@@ -1104,7 +1124,8 @@
     });
   });
   $("btn-undo-edit").addEventListener("click", () => {
-    if (!editUndo || busy || eraseActive) return;
+    if (!editUndo || busy || eraseActive || textActive || signatureActive)
+      return;
     copy(editUndo.base, bufferCanvas);
     copy(editUndo.final, finalCanvas);
     currentFilter = editUndo.filter;
@@ -1396,7 +1417,15 @@
     selection.width = selection.height = 1;
   }
   $("btn-open-erase").addEventListener("click", () => {
-    if (busy || saving || filterSession || eraseActive) return;
+    if (
+      busy ||
+      saving ||
+      filterSession ||
+      eraseActive ||
+      textActive ||
+      signatureActive
+    )
+      return;
     maskCanvas.width = finalCanvas.width;
     maskCanvas.height = finalCanvas.height;
     eraseSession = {
@@ -1989,6 +2018,1719 @@
     }
   });
 
+  // Stage 4.3 Add Text + Signature: local-only, no uploads. Text matches
+  // nearby scanned text via connected-components analysis; signatures are
+  // converted to B&W, cropped, background-removed to transparent alpha, and
+  // composited with a pre-scan multiply blend. Both commit through the same
+  // single-level Undo edit snapshot as Filters/Erase.
+  const TEXT_FONT_STACKS = {
+    sans: "Arial, Helvetica, sans-serif",
+    serif: 'Georgia, "Times New Roman", Times, serif',
+    humanist: 'Calibri, "Segoe UI", Arial, sans-serif',
+    mono: '"Courier New", Courier, monospace',
+    narrow: '"Arial Narrow", Arial, sans-serif',
+  };
+  const TEXT_FONT_LABELS = {
+    sans: "Sans",
+    serif: "Serif",
+    humanist: "Office Sans",
+    mono: "Typewriter",
+    narrow: "Narrow",
+  };
+  const SIG_INK_COLORS = {
+    black: "#14161a",
+    blue: "#2b4acb",
+    charcoal: "#33373d",
+  };
+  function clampNum(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+  function hexToRgb(hex) {
+    const h = String(hex || "#000000").replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function rgbToHex(r, g, b) {
+    return (
+      "#" +
+      [r, g, b]
+        .map((v) => clampNum(Math.round(v), 0, 255).toString(16).padStart(2, "0"))
+        .join("")
+    );
+  }
+  function medianOf(values) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  }
+  function percentileOf(values, q) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+  }
+  function textFontString(size, weight, familyKey) {
+    return `${weight} ${size}px ${TEXT_FONT_STACKS[familyKey] || TEXT_FONT_STACKS.sans}`;
+  }
+  function getTextSettings() {
+    return {
+      text: $("text-content-input").value,
+      family: $("text-font-family").value,
+      weight: Number($("text-font-weight").value) || 500,
+      size: Number($("text-font-size").value) || 28,
+      ink: $("text-ink-color").value || "#22252a",
+      autoFit: $("text-auto-fit").checked,
+      coverBg: $("text-cover-bg").checked,
+      softness: Number($("text-scan-softness").value) || 0,
+      letterSpacing: Number($("text-letter-spacing").value) || 0,
+    };
+  }
+  function setTextControls(style) {
+    if (!style) return;
+    if (style.fontFamily && TEXT_FONT_STACKS[style.fontFamily])
+      $("text-font-family").value = style.fontFamily;
+    if (style.fontWeight) $("text-font-weight").value = String(style.fontWeight);
+    if (style.fontSize) {
+      $("text-font-size").value = String(clampNum(Math.round(style.fontSize), 8, 140));
+      $("text-font-size-value").textContent = `${$("text-font-size").value}px`;
+    }
+    if (style.inkColor) $("text-ink-color").value = style.inkColor;
+    if (Number.isFinite(style.letterSpacing))
+      $("text-letter-spacing").value = String(clampNum(style.letterSpacing, -20, 60));
+  }
+  function measureTextLayout(text, size, weight, familyKey, letterSpacing, boxWidth) {
+    const lines = String(text || "").split("\n");
+    const measureCanvas = document.createElement("canvas");
+    const mctx = measureCanvas.getContext("2d");
+    mctx.font = textFontString(size, weight, familyKey);
+    try {
+      mctx.letterSpacing = `${letterSpacing || 0}px`;
+    } catch (e) {
+      /* letterSpacing unsupported: ignore */
+    }
+    let maxWidth = 0;
+    for (const line of lines) {
+      const w = mctx.measureText(line || " ").width + (letterSpacing || 0) * Math.max(0, line.length - 1);
+      maxWidth = Math.max(maxWidth, w);
+    }
+    const lineHeight = size * 1.28;
+    return {
+      lines,
+      maxWidth,
+      totalHeight: lineHeight * Math.max(1, lines.length),
+      lineHeight,
+      fits: maxWidth <= boxWidth && lineHeight * lines.length <= boxWidth * 4,
+    };
+  }
+  function fitTextFontSize(text, box, weight, familyKey, letterSpacing) {
+    if (!String(text || "").trim()) return null;
+    const pad = 8;
+    const availW = Math.max(20, box.w - pad * 2);
+    const availH = Math.max(16, box.h - pad * 2);
+    let lo = 8,
+      hi = 140,
+      best = 8;
+    for (let i = 0; i < 24; i++) {
+      const mid = Math.round((lo + hi) / 2);
+      const layout = measureTextLayout(text, mid, weight, familyKey, letterSpacing, availW);
+      if (layout.maxWidth <= availW && layout.totalHeight <= availH) {
+        best = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    return best;
+  }
+  // Connected-components text sampling: threshold the region against its
+  // paper luminance, label ink blobs, then derive glyph height, stroke
+  // weight, serif/narrow/mono cues and median ink color.
+  function sampleTextStyle(region) {
+    const src = finalCanvas;
+    if (!src || !src.width || !src.height) return null;
+    const x0 = clampNum(Math.round(Math.min(region.x, region.x + region.w)), 0, src.width - 1);
+    const y0 = clampNum(Math.round(Math.min(region.y, region.y + region.h)), 0, src.height - 1);
+    const x1 = clampNum(Math.round(Math.max(region.x, region.x + region.w)), x0 + 1, src.width);
+    const y1 = clampNum(Math.round(Math.max(region.y, region.y + region.h)), y0 + 1, src.height);
+    const w = x1 - x0,
+      h = y1 - y0;
+    if (w < 12 || h < 12) return null;
+    const scale = Math.min(1, 900 / Math.max(w, h));
+    const aw = Math.max(2, Math.round(w * scale)),
+      ah = Math.max(2, Math.round(h * scale));
+    const tmp = document.createElement("canvas");
+    tmp.width = aw;
+    tmp.height = ah;
+    const tctx = tmp.getContext("2d", { willReadFrequently: true });
+    tctx.drawImage(src, x0, y0, w, h, 0, 0, aw, ah);
+    let imageData;
+    try {
+      imageData = tctx.getImageData(0, 0, aw, ah);
+    } catch (e) {
+      return null;
+    }
+    const data = imageData.data;
+    const count = aw * ah;
+    const lum = new Float32Array(count);
+    const lums = new Array(count);
+    for (let i = 0; i < count; i++) {
+      const o = i * 4;
+      const l = 0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2];
+      lum[i] = l;
+      lums[i] = l;
+    }
+    const paper = percentileOf(lums, 0.88);
+    const inkThreshold = Math.min(paper - 38, 205);
+    if (paper < 90) return null;
+    const ink = new Uint8Array(count);
+    let inkCount = 0;
+    for (let i = 0; i < count; i++) {
+      if (lum[i] < inkThreshold) {
+        ink[i] = 1;
+        inkCount++;
+      }
+    }
+    if (inkCount < 24) return null;
+    // 8-connected labeling with an explicit stack.
+    const labels = new Int32Array(count).fill(-1);
+    const components = [];
+    const stack = new Int32Array(count);
+    for (let start = 0; start < count; start++) {
+      if (!ink[start] || labels[start] !== -1) continue;
+      const id = components.length;
+      let sp = 0;
+      stack[sp++] = start;
+      labels[start] = id;
+      let minX = aw,
+        maxX = -1,
+        minY = ah,
+        maxY = -1,
+        area = 0;
+      const pixels = [];
+      while (sp > 0) {
+        const p = stack[--sp];
+        const px = p % aw,
+          py = (p / aw) | 0;
+        area++;
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+        if (pixels.length < 4000) pixels.push(p);
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const nx = px + dx,
+              ny = py + dy;
+            if (nx < 0 || ny < 0 || nx >= aw || ny >= ah) continue;
+            const np = ny * aw + nx;
+            if (ink[np] && labels[np] === -1) {
+              labels[np] = id;
+              stack[sp++] = np;
+            }
+          }
+        }
+      }
+      components.push({ minX, maxX, minY, maxY, area, pixels });
+    }
+    const glyphs = components.filter((c) => {
+      const cw = c.maxX - c.minX + 1,
+        ch = c.maxY - c.minY + 1;
+      return ch >= 4 && ch <= ah * 0.55 && cw >= 2 && cw <= aw * 0.45 && c.area >= 6;
+    });
+    if (glyphs.length < 3) return null;
+    const heights = glyphs.map((c) => c.maxY - c.minY + 1);
+    const widths = glyphs.map((c) => c.maxX - c.minX + 1);
+    const capHeight = percentileOf(heights, 0.75);
+    if (capHeight < 4) return null;
+    const fontSize = clampNum(Math.round(capHeight / 0.7 / scale), 8, 140);
+    // Stroke width = median horizontal ink run length per glyph row. One
+    // pixel is subtracted because antialiased edges are counted as ink at
+    // both sides of a stem, which otherwise inflates every weight.
+    const runMedians = [];
+    for (const c of glyphs) {
+      const rows = new Map();
+      for (const p of c.pixels) {
+        const py = (p / aw) | 0;
+        if (!rows.has(py)) rows.set(py, []);
+        rows.get(py).push(p % aw);
+      }
+      const runs = [];
+      for (const xs of rows.values()) {
+        xs.sort((a, b) => a - b);
+        let len = 1;
+        for (let i = 1; i < xs.length; i++) {
+          if (xs[i] === xs[i - 1] + 1) len++;
+          else {
+            runs.push(len);
+            len = 1;
+          }
+        }
+        runs.push(len);
+      }
+      if (runs.length) runMedians.push(medianOf(runs));
+    }
+    const medianStroke = medianOf(runMedians) || 2;
+    const ratio = Math.max(1, medianStroke - 1) / Math.max(1, capHeight);
+    const fontWeight = ratio < 0.175 ? 400 : ratio < 0.21 ? 500 : ratio < 0.26 ? 600 : 700;
+    // Serif cue: ink row width near the baseline vs the middle rows.
+    let serifVotes = 0,
+      tallCount = 0;
+    for (const c of glyphs) {
+      const ch = c.maxY - c.minY + 1;
+      if (ch < 7) continue;
+      tallCount++;
+      const bottomRows = new Set();
+      const midRows = new Set();
+      for (const p of c.pixels) {
+        const py = (p / aw) | 0;
+        if (py >= c.maxY - 2) bottomRows.add(p);
+        if (py >= c.minY + Math.floor(ch / 2) - 1 && py <= c.minY + Math.floor(ch / 2) + 1)
+          midRows.add(p);
+      }
+      const bottomW = bottomRows.size / 3;
+      const midW = Math.max(1, midRows.size / 3);
+      if (bottomW > midW * 1.3) serifVotes++;
+    }
+    const serifScore = tallCount ? serifVotes / tallCount : 0;
+    const meanWidth = widths.reduce((a, b) => a + b, 0) / widths.length;
+    const widthStd = Math.sqrt(
+      widths.reduce((a, b) => a + (b - meanWidth) * (b - meanWidth), 0) / widths.length,
+    );
+    const medianAspect = medianOf(glyphs.map((c) => (c.maxX - c.minX + 1) / Math.max(1, c.maxY - c.minY + 1)));
+    let fontFamily = "sans";
+    if (serifScore > 0.35) fontFamily = "serif";
+    else if (glyphs.length >= 8 && meanWidth > 0 && widthStd / meanWidth < 0.2) fontFamily = "mono";
+    else if (medianAspect < 0.52) fontFamily = "narrow";
+    // Median ink color from the darkest ink pixels.
+    const inkPixels = [];
+    for (let i = 0; i < count; i++) {
+      if (ink[i]) {
+        const o = i * 4;
+        inkPixels.push({ l: lum[i], r: data[o], g: data[o + 1], b: data[o + 2] });
+      }
+    }
+    inkPixels.sort((a, b) => a.l - b.l);
+    const darkest = inkPixels.slice(0, Math.max(1, Math.floor(inkPixels.length * 0.3)));
+    const inkColor = rgbToHex(
+      medianOf(darkest.map((p) => p.r)),
+      medianOf(darkest.map((p) => p.g)),
+      medianOf(darkest.map((p) => p.b)),
+    );
+    return { fontSize, fontFamily, fontWeight, inkColor, letterSpacing: 0, glyphs: glyphs.length };
+  }
+  let textSession = null,
+    textFrame = null;
+  function updateTextTransform() {
+    if (!textSession) return;
+    const session = textSession;
+    if (session.zoom <= 1) {
+      session.panX = 0;
+      session.panY = 0;
+    } else {
+      const maxX =
+        Math.max(0, (surface.offsetWidth * session.zoom - editorStage.clientWidth) / 2) +
+        editorStage.clientWidth * 0.2;
+      const maxY =
+        Math.max(0, (surface.offsetHeight * session.zoom - editorStage.clientHeight) / 2) +
+        editorStage.clientHeight * 0.2;
+      session.panX = clampNum(session.panX, -maxX, maxX);
+      session.panY = clampNum(session.panY, -maxY, maxY);
+    }
+    surface.style.transform = `translate(${session.panX}px, ${session.panY}px) scale(${session.zoom})`;
+    $("text-zoom").value = `${Math.round(session.zoom * 100)}%`;
+  }
+  function positionTextEditor() {
+    if (!textActive) return;
+    const height = $("text-panel").getBoundingClientRect().height;
+    const top = Math.max(
+      70,
+      document.querySelector(".navbar").getBoundingClientRect().bottom + 8,
+    );
+    document.body.style.setProperty("--erase-sheet-height", `${height + 12}px`);
+    document.body.style.setProperty("--erase-editor-top", `${top}px`);
+    updateTextTransform();
+  }
+  if (typeof ResizeObserver !== "undefined")
+    new ResizeObserver(positionTextEditor).observe($("text-panel"));
+  window.addEventListener("resize", positionTextEditor);
+  function textHandleSize() {
+    return Math.max(12, (maskCanvas.width || 800) * 0.018);
+  }
+  function textCornerAt(point, box) {
+    const hs = textHandleSize();
+    const corners = [
+      { key: "tl", x: box.x, y: box.y },
+      { key: "tr", x: box.x + box.w, y: box.y },
+      { key: "br", x: box.x + box.w, y: box.y + box.h },
+      { key: "bl", x: box.x, y: box.y + box.h },
+    ];
+    for (const corner of corners)
+      if (Math.abs(point.x - corner.x) <= hs && Math.abs(point.y - corner.y) <= hs)
+        return corner.key;
+    return null;
+  }
+  function drawTextBoxChrome(ctx, box) {
+    const hs = textHandleSize();
+    ctx.save();
+    ctx.strokeStyle = "#22d3ee";
+    ctx.lineWidth = Math.max(1.5, maskCanvas.width / 900);
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#22d3ee";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    for (const [cx, cy] of [
+      [box.x, box.y],
+      [box.x + box.w, box.y],
+      [box.x + box.w, box.y + box.h],
+      [box.x, box.y + box.h],
+    ]) {
+      ctx.beginPath();
+      ctx.rect(cx - hs / 2, cy - hs / 2, hs, hs);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function drawTextInto(ctx, settings, box, forFinal) {
+    const text = settings.text;
+    if (!String(text || "").trim()) return;
+    const pad = 8;
+    ctx.save();
+    ctx.font = textFontString(settings.size, settings.weight, settings.family);
+    try {
+      ctx.letterSpacing = `${settings.letterSpacing || 0}px`;
+    } catch (e) {
+      /* ignore */
+    }
+    ctx.fillStyle = settings.ink;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    const blur = (settings.softness / 100) * 1.1;
+    if (blur > 0.05) {
+      try {
+        ctx.filter = `blur(${blur}px)`;
+      } catch (e) {
+        /* ignore */
+      }
+    }
+    if (!forFinal) ctx.globalAlpha = 1 - (settings.softness / 100) * 0.08;
+    const lines = String(text).split("\n");
+    const lineHeight = settings.size * 1.28;
+    lines.forEach((line, i) => {
+      ctx.fillText(line, box.x + pad, box.y + pad + i * lineHeight);
+    });
+    ctx.restore();
+  }
+  function renderTextPreview() {
+    if (!textActive || !textSession) return;
+    const ctx = maskCanvas.getContext("2d");
+    ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    const settings = getTextSettings();
+    const box = textSession.box;
+    if (settings.coverBg && String(settings.text || "").trim()) {
+      const bounds = { x0: box.x, y0: box.y, x1: box.x + box.w, y1: box.y + box.h };
+      const field = textSession.paper.field(bounds);
+      const pattern = ctx.createPattern(field.tile, "no-repeat");
+      pattern.setTransform(
+        new DOMMatrix()
+          .translate(field.x - field.width / 24, field.y - field.height / 24)
+          .scale(field.width / 24, field.height / 24),
+      );
+      ctx.save();
+      ctx.fillStyle = pattern;
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+      ctx.restore();
+      field.tile.width = field.tile.height = 1;
+    }
+    drawTextInto(ctx, settings, box, false);
+    if (!textSession.hideBox) drawTextBoxChrome(ctx, box);
+    if (textSession.sampleRect) {
+      const r = textSession.sampleRect;
+      ctx.save();
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      ctx.restore();
+    }
+    if (textSession.targetRect) {
+      const r = textSession.targetRect;
+      ctx.save();
+      ctx.strokeStyle = "#a78bfa";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+      ctx.restore();
+    }
+  }
+  function requestTextRender() {
+    if (textFrame !== null) return;
+    textFrame = requestAnimationFrame(() => {
+      textFrame = null;
+      renderTextPreview();
+    });
+  }
+  function syncTextApplyButton() {
+    $("btn-apply-text").disabled = !String($("text-content-input").value || "").trim() || busy;
+  }
+  function autoFitTextBox() {
+    if (!textSession) return;
+    const settings = getTextSettings();
+    if (!settings.autoFit || !String(settings.text || "").trim()) return;
+    const fitted = fitTextFontSize(
+      settings.text,
+      textSession.box,
+      settings.weight,
+      settings.family,
+      settings.letterSpacing,
+    );
+    if (fitted && fitted !== settings.size) {
+      $("text-font-size").value = String(fitted);
+      $("text-font-size-value").textContent = `${fitted}px`;
+    }
+  }
+  function sizeBoxToText() {
+    if (!textSession) return;
+    const settings = getTextSettings();
+    const layout = measureTextLayout(
+      settings.text || "Text",
+      settings.size,
+      settings.weight,
+      settings.family,
+      settings.letterSpacing,
+      1e9,
+    );
+    const pad = 16;
+    const box = textSession.box;
+    box.w = clampNum(Math.ceil(layout.maxWidth + pad), 40, maskCanvas.width);
+    box.h = clampNum(Math.ceil(layout.totalHeight + pad), 24, maskCanvas.height);
+    box.x = clampNum(box.x, 0, Math.max(0, maskCanvas.width - box.w));
+    box.y = clampNum(box.y, 0, Math.max(0, maskCanvas.height - box.h));
+    requestTextRender();
+  }
+  function autoSampleText() {
+    if (!textSession) return;
+    const W = finalCanvas.width,
+      H = finalCanvas.height;
+    const center = { x: W * 0.18, y: H * 0.28, w: W * 0.64, h: H * 0.44 };
+    let style = sampleTextStyle(center);
+    if (!style) style = sampleTextStyle({ x: W * 0.05, y: H * 0.05, w: W * 0.9, h: H * 0.9 });
+    if (style) {
+      setTextControls(style);
+      $("text-match-badge").textContent =
+        `Matched ${style.fontSize}px ${TEXT_FONT_LABELS[style.fontFamily] || "Sans"} ${style.fontWeight} · ${style.inkColor}`;
+      $("text-hint").textContent =
+        "Matched to nearby text. Use “⊕ Sample text” to sample any line, or drag the box handles to fit.";
+    } else {
+      $("text-match-badge").textContent = "Defaults · no text found";
+      $("text-hint").textContent =
+        "No nearby text detected. Type your text, or use “⊕ Sample text” and drag over any printed line.";
+    }
+  }
+  function openText() {
+    if (
+      busy ||
+      saving ||
+      eraseActive ||
+      textActive ||
+      signatureActive ||
+      filterSession ||
+      !finalCanvas.width ||
+      !finalCanvas.height
+    )
+      return;
+    maskCanvas.width = finalCanvas.width;
+    maskCanvas.height = finalCanvas.height;
+    const W = finalCanvas.width,
+      H = finalCanvas.height;
+    const size = Number($("text-font-size").value) || 28;
+    textSession = {
+      box: {
+        x: Math.round(W * 0.2),
+        y: Math.round(H * 0.42),
+        w: Math.round(W * 0.6),
+        h: Math.round(size * 2.4),
+      },
+      paper: PaperMatch.create(finalCanvas),
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      pointers: new Map(),
+      gesture: null,
+      drag: null,
+      sampling: false,
+      targetMode: false,
+      sampleRect: null,
+      targetRect: null,
+      hideBox: false,
+    };
+    textActive = true;
+    drawing = null;
+    $("text-panel").hidden = false;
+    document.body.classList.add("text-editing");
+    $("btn-sample-text-style").setAttribute("aria-pressed", "false");
+    $("btn-draw-text-box").setAttribute("aria-pressed", "false");
+    $("btn-preview-text-clean").setAttribute("aria-pressed", "false");
+    $("btn-preview-text-clean").textContent = "Hide box";
+    document.body.classList.remove("sampling-mode");
+    autoSampleText();
+    autoFitTextBox();
+    syncTextApplyButton();
+    requestAnimationFrame(() => {
+      positionTextEditor();
+      renderTextPreview();
+    });
+  }
+  function closeText() {
+    if (!textActive) return;
+    textActive = false;
+    textSession = null;
+    if (textFrame !== null) cancelAnimationFrame(textFrame);
+    textFrame = null;
+    document.body.classList.remove("text-editing", "sampling-mode");
+    $("text-panel").hidden = true;
+    surface.style.transform = "";
+    maskCanvas.width = maskCanvas.height = 1;
+  }
+  function applyText() {
+    if (!textActive || !textSession || busy) return;
+    const settings = getTextSettings();
+    if (!String(settings.text || "").trim()) return;
+    const box = { ...textSession.box };
+    const paper = textSession.paper;
+    rememberEdit();
+    const ctx = finalCanvas.getContext("2d");
+    if (settings.coverBg) {
+      const bounds = { x0: box.x, y0: box.y, x1: box.x + box.w, y1: box.y + box.h };
+      const field = paper.field(bounds);
+      const pattern = ctx.createPattern(field.tile, "no-repeat");
+      pattern.setTransform(
+        new DOMMatrix()
+          .translate(field.x - field.width / 24, field.y - field.height / 24)
+          .scale(field.width / 24, field.height / 24),
+      );
+      ctx.save();
+      ctx.fillStyle = pattern;
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+      ctx.restore();
+      field.tile.width = field.tile.height = 1;
+    }
+    drawTextInto(ctx, settings, box, true);
+    copy(finalCanvas, bufferCanvas);
+    currentFilter = "original";
+    currentFilterSettings = FilterProcessor.defaults("original");
+    syncFilters(currentFilter);
+    markDirty();
+    closeText();
+  }
+  $("btn-open-text").addEventListener("click", openText);
+  $("btn-cancel-text").addEventListener("click", closeText);
+  $("btn-apply-text").addEventListener("click", applyText);
+  $("btn-fit-box-to-text").addEventListener("click", sizeBoxToText);
+  $("btn-sample-text-style").addEventListener("click", () => {
+    if (!textSession || busy) return;
+    textSession.sampling = !textSession.sampling;
+    if (textSession.sampling) textSession.targetMode = false;
+    $("btn-sample-text-style").setAttribute("aria-pressed", String(textSession.sampling));
+    $("btn-draw-text-box").setAttribute("aria-pressed", String(textSession.targetMode));
+    document.body.classList.toggle("sampling-mode", textSession.sampling);
+    $("text-hint").textContent = textSession.sampling
+      ? "Drag over existing document text to sample its size, font and ink color."
+      : "Sampling cancelled. Drag the box to move it, or drag a corner to resize.";
+    requestTextRender();
+  });
+  $("btn-draw-text-box").addEventListener("click", () => {
+    if (!textSession || busy) return;
+    textSession.targetMode = !textSession.targetMode;
+    if (textSession.targetMode) textSession.sampling = false;
+    $("btn-draw-text-box").setAttribute("aria-pressed", String(textSession.targetMode));
+    $("btn-sample-text-style").setAttribute("aria-pressed", String(textSession.sampling));
+    document.body.classList.toggle("sampling-mode", textSession.sampling);
+    $("text-hint").textContent = textSession.targetMode
+      ? "Drag a target box on the document where the text must fit."
+      : "Target box cancelled. Drag the box to move it, or drag a corner to resize.";
+    requestTextRender();
+  });
+  $("btn-preview-text-clean").addEventListener("click", () => {
+    if (!textSession || busy) return;
+    textSession.hideBox = !textSession.hideBox;
+    $("btn-preview-text-clean").setAttribute("aria-pressed", String(textSession.hideBox));
+    $("btn-preview-text-clean").textContent = textSession.hideBox ? "Show box" : "Hide box";
+    requestTextRender();
+  });
+  function zoomText(value) {
+    if (!textSession || busy) return;
+    textSession.zoom = clampNum(value, 1, 4);
+    updateTextTransform();
+  }
+  $("btn-text-zoom-in").addEventListener("click", () => zoomText((textSession?.zoom || 1) + 0.25));
+  $("btn-text-zoom-out").addEventListener("click", () => zoomText((textSession?.zoom || 1) - 0.25));
+  $("btn-text-zoom-fit").addEventListener("click", () => {
+    if (!textSession || busy) return;
+    textSession.panX = textSession.panY = 0;
+    zoomText(1);
+  });
+  $("text-content-input").addEventListener("input", () => {
+    syncTextApplyButton();
+    autoFitTextBox();
+    requestTextRender();
+  });
+  ["text-font-family", "text-font-weight", "text-ink-color", "text-letter-spacing", "text-scan-softness", "text-cover-bg"].forEach(
+    (id) => {
+      $(id).addEventListener("input", () => {
+        autoFitTextBox();
+        requestTextRender();
+      });
+      $(id).addEventListener("change", () => {
+        autoFitTextBox();
+        requestTextRender();
+      });
+    },
+  );
+  $("text-font-size").addEventListener("input", () => {
+    $("text-font-size-value").textContent = `${$("text-font-size").value}px`;
+    requestTextRender();
+  });
+  $("text-auto-fit").addEventListener("change", () => {
+    autoFitTextBox();
+    requestTextRender();
+  });
+  function textPinchMetrics() {
+    const [a, b] = [...textSession.pointers.values()];
+    return {
+      distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+    };
+  }
+  editorStage.addEventListener("pointerdown", (event) => {
+    if (!textActive || !textSession || busy || event.button !== 0) return;
+    event.preventDefault();
+    const session = textSession;
+    session.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    editorStage.setPointerCapture(event.pointerId);
+    if (session.pointers.size >= 2) {
+      session.drag = null;
+      session.sampleRect = null;
+      session.targetRect = null;
+      if (!session.gesture)
+        session.gesture = {
+          ...textPinchMetrics(),
+          zoom: session.zoom,
+          panX: session.panX,
+          panY: session.panY,
+        };
+      requestTextRender();
+      return;
+    }
+    if (session.gesture) return;
+    const point = maskPoint(event);
+    const box = session.box;
+    const corner = textCornerAt(point, box);
+    const inside =
+      point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h;
+    if (session.sampling) {
+      session.drag = { mode: "sample", start: point, current: point };
+      session.sampleRect = { x: point.x, y: point.y, w: 0, h: 0 };
+    } else if (corner) {
+      session.drag = { mode: "resize", corner, start: point, orig: { ...box } };
+    } else if (inside) {
+      session.drag = { mode: "move", start: point, orig: { ...box } };
+    } else if (session.targetMode) {
+      session.drag = { mode: "target", start: point, current: point };
+      session.targetRect = { x: point.x, y: point.y, w: 0, h: 0 };
+    } else {
+      session.drag = {
+        mode: "pan",
+        start: { x: event.clientX, y: event.clientY },
+        panX: session.panX,
+        panY: session.panY,
+        orig: { ...box },
+        moved: false,
+      };
+    }
+    requestTextRender();
+  });
+  editorStage.addEventListener("pointermove", (event) => {
+    if (!textActive || !textSession || busy || !textSession.pointers.has(event.pointerId)) return;
+    const session = textSession;
+    session.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (session.gesture) {
+      if (session.pointers.size < 2) return;
+      const metric = textPinchMetrics(),
+        origin = session.gesture;
+      session.zoom = clampNum((origin.zoom * metric.distance) / origin.distance, 1, 4);
+      session.panX = origin.panX + metric.x - origin.x;
+      session.panY = origin.panY + metric.y - origin.y;
+      updateTextTransform();
+      return;
+    }
+    const drag = session.drag;
+    if (!drag) return;
+    const point = maskPoint(event);
+    const box = session.box;
+    if (drag.mode === "sample") {
+      drag.current = point;
+      session.sampleRect = {
+        x: Math.min(drag.start.x, point.x),
+        y: Math.min(drag.start.y, point.y),
+        w: Math.abs(point.x - drag.start.x),
+        h: Math.abs(point.y - drag.start.y),
+      };
+    } else if (drag.mode === "target") {
+      drag.current = point;
+      session.targetRect = {
+        x: Math.min(drag.start.x, point.x),
+        y: Math.min(drag.start.y, point.y),
+        w: Math.abs(point.x - drag.start.x),
+        h: Math.abs(point.y - drag.start.y),
+      };
+    } else if (drag.mode === "move") {
+      box.x = clampNum(drag.orig.x + point.x - drag.start.x, 0, Math.max(0, maskCanvas.width - box.w));
+      box.y = clampNum(drag.orig.y + point.y - drag.start.y, 0, Math.max(0, maskCanvas.height - box.h));
+    } else if (drag.mode === "resize") {
+      const orig = drag.orig;
+      let nx = orig.x,
+        ny = orig.y,
+        nw = orig.w,
+        nh = orig.h;
+      if (drag.corner === "br") {
+        nw = point.x - orig.x;
+        nh = point.y - orig.y;
+      } else if (drag.corner === "tr") {
+        nw = point.x - orig.x;
+        nh = orig.y + orig.h - point.y;
+        ny = point.y;
+      } else if (drag.corner === "bl") {
+        nw = orig.x + orig.w - point.x;
+        nh = point.y - orig.y;
+        nx = point.x;
+      } else {
+        nw = orig.x + orig.w - point.x;
+        nh = orig.y + orig.h - point.y;
+        nx = point.x;
+        ny = point.y;
+      }
+      nw = Math.max(30, nw);
+      nh = Math.max(20, nh);
+      if (drag.corner === "tl" || drag.corner === "bl") nx = orig.x + orig.w - nw;
+      if (drag.corner === "tl" || drag.corner === "tr") ny = orig.y + orig.h - nh;
+      box.x = clampNum(nx, 0, Math.max(0, maskCanvas.width - nw));
+      box.y = clampNum(ny, 0, Math.max(0, maskCanvas.height - nh));
+      box.w = nw;
+      box.h = nh;
+    } else if (drag.mode === "pan") {
+      const dx = event.clientX - drag.start.x,
+        dy = event.clientY - drag.start.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (session.zoom > 1) {
+        session.panX = drag.panX + dx;
+        session.panY = drag.panY + dy;
+        updateTextTransform();
+      } else {
+        const rect = maskCanvas.getBoundingClientRect();
+        const sx = maskCanvas.width / Math.max(1, rect.width),
+          sy = maskCanvas.height / Math.max(1, rect.height);
+        box.x = clampNum(drag.orig.x + dx * sx, 0, Math.max(0, maskCanvas.width - box.w));
+        box.y = clampNum(drag.orig.y + dy * sy, 0, Math.max(0, maskCanvas.height - box.h));
+      }
+    }
+    requestTextRender();
+  });
+  function endTextPointer(event) {
+    if (!textActive || !textSession?.pointers.has(event.pointerId)) return;
+    const session = textSession;
+    const drag = session.drag;
+    if (drag && event.type === "pointerup" && !session.gesture) {
+      if (drag.mode === "sample" && session.sampleRect) {
+        let rect = { ...session.sampleRect };
+        if (rect.w < 8 || rect.h < 8)
+          rect = { x: rect.x - 30, y: rect.y - 14, w: 60, h: 28 };
+        const style = sampleTextStyle(rect);
+        if (style) {
+          setTextControls(style);
+          $("text-match-badge").textContent =
+            `Sampled ${style.fontSize}px ${TEXT_FONT_LABELS[style.fontFamily] || "Sans"} ${style.fontWeight} · ${style.inkColor}`;
+          $("text-hint").textContent =
+            "Sampled from your selection. Drag the box to position, or drag a corner to resize.";
+          autoFitTextBox();
+        } else {
+          $("text-hint").textContent =
+            "No text found in that selection. Drag over a printed line and try again.";
+        }
+        session.sampling = false;
+        $("btn-sample-text-style").setAttribute("aria-pressed", "false");
+        document.body.classList.remove("sampling-mode");
+        session.sampleRect = null;
+      } else if (drag.mode === "target" && session.targetRect) {
+        const rect = session.targetRect;
+        if (rect.w >= 24 && rect.h >= 14) {
+          session.box = {
+            x: clampNum(Math.round(rect.x), 0, maskCanvas.width - 1),
+            y: clampNum(Math.round(rect.y), 0, maskCanvas.height - 1),
+            w: Math.min(Math.round(rect.w), maskCanvas.width - session.box.x),
+            h: Math.min(Math.round(rect.h), maskCanvas.height - session.box.y),
+          };
+          autoFitTextBox();
+          $("text-hint").textContent =
+            "Target box set. Text auto-fitted inside. Drag to move, or drag a corner to resize.";
+        }
+        session.targetMode = false;
+        $("btn-draw-text-box").setAttribute("aria-pressed", "false");
+        session.targetRect = null;
+      } else if (drag.mode === "resize" || drag.mode === "move") {
+        autoFitTextBox();
+      }
+      session.drag = null;
+    }
+    session.pointers.delete(event.pointerId);
+    if (!session.pointers.size) session.gesture = null;
+    if (editorStage.hasPointerCapture(event.pointerId))
+      editorStage.releasePointerCapture(event.pointerId);
+    requestTextRender();
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) =>
+    editorStage.addEventListener(type, endTextPointer),
+  );
+  editorStage.addEventListener(
+    "wheel",
+    (event) => {
+      if (!textActive || !textSession || !event.ctrlKey) return;
+      event.preventDefault();
+      zoomText(textSession.zoom + (event.deltaY < 0 ? 0.15 : -0.15));
+    },
+    { passive: false },
+  );
+  // Signature: drawpad + scan/upload -> B&W -> crop popup -> transparent
+  // alpha matting -> pre-scan multiply placement with session reuse.
+  let sigSession = null,
+    sigFrame = null,
+    savedSignature = null;
+  let sigDrawStrokes = [],
+    sigDrawCurrent = null;
+  let sigSourceImage = null,
+    sigBwCanvas = null,
+    sigCropBox = null,
+    sigCropDrag = null,
+    sigCropConfirmed = false,
+    sigAdvancing = false;
+  function updateSigTransform() {
+    if (!sigSession) return;
+    const session = sigSession;
+    if (session.zoom <= 1) {
+      session.panX = 0;
+      session.panY = 0;
+    } else {
+      const maxX =
+        Math.max(0, (surface.offsetWidth * session.zoom - editorStage.clientWidth) / 2) +
+        editorStage.clientWidth * 0.2;
+      const maxY =
+        Math.max(0, (surface.offsetHeight * session.zoom - editorStage.clientHeight) / 2) +
+        editorStage.clientHeight * 0.2;
+      session.panX = clampNum(session.panX, -maxX, maxX);
+      session.panY = clampNum(session.panY, -maxY, maxY);
+    }
+    surface.style.transform = `translate(${session.panX}px, ${session.panY}px) scale(${session.zoom})`;
+    $("sig-zoom").value = `${Math.round(session.zoom * 100)}%`;
+  }
+  function positionSigEditor() {
+    if (!signatureActive || $("signature-panel").hidden) return;
+    const height = $("signature-panel").getBoundingClientRect().height;
+    const top = Math.max(
+      70,
+      document.querySelector(".navbar").getBoundingClientRect().bottom + 8,
+    );
+    document.body.style.setProperty("--erase-sheet-height", `${height + 12}px`);
+    document.body.style.setProperty("--erase-editor-top", `${top}px`);
+    updateSigTransform();
+  }
+  if (typeof ResizeObserver !== "undefined")
+    new ResizeObserver(positionSigEditor).observe($("signature-panel"));
+  window.addEventListener("resize", positionSigEditor);
+  function sigDarknessAlpha(darkness) {
+    return 0.5 + (clampNum(darkness, 40, 100) / 100) * 0.5;
+  }
+  function getTintedSignature(session) {
+    const key = session.ink;
+    if (session.tintedCache[key]) return session.tintedCache[key];
+    const source = session.image;
+    const tinted = document.createElement("canvas");
+    tinted.width = source.width;
+    tinted.height = source.height;
+    const ctx = tinted.getContext("2d");
+    ctx.drawImage(source, 0, 0);
+    ctx.globalCompositeOperation = "source-in";
+    ctx.fillStyle = SIG_INK_COLORS[key] || SIG_INK_COLORS.black;
+    ctx.fillRect(0, 0, tinted.width, tinted.height);
+    session.tintedCache[key] = tinted;
+    return tinted;
+  }
+  function drawSignatureInto(ctx, session, box, forFinal) {
+    const tinted = getTintedSignature(session);
+    const cx = box.x + box.w / 2,
+      cy = box.y + box.h / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(((session.rotate || 0) * Math.PI) / 180);
+    ctx.globalAlpha = sigDarknessAlpha(session.darkness) * (forFinal ? 0.97 : 1);
+    if (forFinal) ctx.globalCompositeOperation = "multiply";
+    try {
+      ctx.filter = "blur(0.45px)";
+    } catch (e) {
+      /* ignore */
+    }
+    ctx.drawImage(tinted, -box.w / 2, -box.h / 2, box.w, box.h);
+    ctx.restore();
+  }
+  function renderSigPreview() {
+    if (!signatureActive || !sigSession) return;
+    const ctx = maskCanvas.getContext("2d");
+    ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    drawSignatureInto(ctx, sigSession, sigSession.box, false);
+    if (!sigSession.hideBox) drawTextBoxChrome(ctx, sigSession.box);
+  }
+  function requestSigRender() {
+    if (sigFrame !== null) return;
+    sigFrame = requestAnimationFrame(() => {
+      sigFrame = null;
+      renderSigPreview();
+    });
+  }
+  function syncSigInkButtons() {
+    document.querySelectorAll(".sig-ink-btn").forEach((button) => {
+      const active = sigSession && button.dataset.ink === sigSession.ink;
+      button.classList.toggle("active", !!active);
+      button.setAttribute("aria-pressed", String(!!active));
+    });
+  }
+  function defaultSigBox(image) {
+    const W = maskCanvas.width,
+      H = maskCanvas.height;
+    const aspect = image.height / Math.max(1, image.width);
+    const w = Math.min(Math.round(W * 0.38), 560);
+    const h = Math.max(24, Math.round(w * aspect));
+    return {
+      x: clampNum(Math.round((W - w) / 2), 0, Math.max(0, W - w)),
+      y: clampNum(Math.round(H * 0.62), 0, Math.max(0, H - h)),
+      w,
+      h,
+    };
+  }
+  function startSigPlacement(cleanCanvas, reused = false) {
+    const image = clone(cleanCanvas);
+    const box = defaultSigBox(image);
+    sigSession = {
+      image,
+      ink: savedSignature?.ink || "black",
+      darkness: savedSignature?.darkness ?? 88,
+      rotate: savedSignature?.rotate ?? 0,
+      baseW: box.w,
+      baseH: box.h,
+      box,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      pointers: new Map(),
+      gesture: null,
+      drag: null,
+      hideBox: false,
+      tintedCache: {},
+    };
+    $("sig-scale-slider").value = "100";
+    $("sig-darkness-slider").value = String(sigSession.darkness);
+    $("sig-rotate-slider").value = String(sigSession.rotate);
+    syncSigInkButtons();
+    $("btn-preview-sig-clean").setAttribute("aria-pressed", "false");
+    $("btn-preview-sig-clean").textContent = "Hide box";
+    $("sig-hint").textContent = reused
+      ? "Reusing your saved signature. Drag to position, drag a corner to resize — or use “Draw / Scan / Upload” for a new one."
+      : "Drag the signature to position it or drag a corner handle to resize. Blended into paper texture so it looks signed before scanning.";
+    $("signature-panel").hidden = false;
+    document.body.classList.add("sig-editing");
+    requestAnimationFrame(() => {
+      positionSigEditor();
+      renderSigPreview();
+    });
+  }
+  function closeSig() {
+    if (!signatureActive) return;
+    signatureActive = false;
+    sigSession = null;
+    if (sigFrame !== null) cancelAnimationFrame(sigFrame);
+    sigFrame = null;
+    document.body.classList.remove("sig-editing");
+    $("signature-panel").hidden = true;
+    surface.style.transform = "";
+    maskCanvas.width = maskCanvas.height = 1;
+    for (const dialog of [$("signature-source-modal"), $("signature-crop-modal")])
+      if (dialog.open) dialog.close();
+  }
+  function applySignature() {
+    if (!signatureActive || !sigSession || busy) return;
+    const session = sigSession;
+    const box = { ...session.box };
+    rememberEdit();
+    const ctx = finalCanvas.getContext("2d");
+    drawSignatureInto(ctx, session, box, true);
+    copy(finalCanvas, bufferCanvas);
+    savedSignature = {
+      canvas: clone(session.image),
+      ink: session.ink,
+      darkness: session.darkness,
+      rotate: session.rotate,
+    };
+    currentFilter = "original";
+    currentFilterSettings = FilterProcessor.defaults("original");
+    syncFilters(currentFilter);
+    markDirty();
+    closeSig();
+  }
+  function openSignature() {
+    if (
+      busy ||
+      saving ||
+      eraseActive ||
+      textActive ||
+      signatureActive ||
+      filterSession ||
+      !finalCanvas.width ||
+      !finalCanvas.height
+    )
+      return;
+    signatureActive = true;
+    maskCanvas.width = finalCanvas.width;
+    maskCanvas.height = finalCanvas.height;
+    if (savedSignature) {
+      startSigPlacement(savedSignature.canvas, true);
+    } else {
+      sigSession = null;
+      openSigSourceModal();
+    }
+  }
+  $("btn-open-signature").addEventListener("click", openSignature);
+  $("btn-cancel-signature").addEventListener("click", closeSig);
+  $("btn-apply-signature").addEventListener("click", applySignature);
+  $("btn-change-signature").addEventListener("click", () => {
+    if (busy) return;
+    openSigSourceModal();
+  });
+  $("btn-preview-sig-clean").addEventListener("click", () => {
+    if (!sigSession || busy) return;
+    sigSession.hideBox = !sigSession.hideBox;
+    $("btn-preview-sig-clean").setAttribute("aria-pressed", String(sigSession.hideBox));
+    $("btn-preview-sig-clean").textContent = sigSession.hideBox ? "Show box" : "Hide box";
+    requestSigRender();
+  });
+  function zoomSig(value) {
+    if (!sigSession || busy) return;
+    sigSession.zoom = clampNum(value, 1, 4);
+    updateSigTransform();
+  }
+  $("btn-sig-zoom-in").addEventListener("click", () => zoomSig((sigSession?.zoom || 1) + 0.25));
+  $("btn-sig-zoom-out").addEventListener("click", () => zoomSig((sigSession?.zoom || 1) - 0.25));
+  $("btn-sig-zoom-fit").addEventListener("click", () => {
+    if (!sigSession || busy) return;
+    sigSession.panX = sigSession.panY = 0;
+    zoomSig(1);
+  });
+  document.querySelectorAll(".sig-ink-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!sigSession || busy) return;
+      sigSession.ink = button.dataset.ink || "black";
+      syncSigInkButtons();
+      requestSigRender();
+    });
+  });
+  $("sig-scale-slider").addEventListener("input", () => {
+    if (!sigSession || busy) return;
+    const scale = Number($("sig-scale-slider").value) || 100;
+    const box = sigSession.box;
+    const cx = box.x + box.w / 2,
+      cy = box.y + box.h / 2;
+    box.w = clampNum(Math.round(sigSession.baseW * (scale / 100)), 30, maskCanvas.width);
+    box.h = clampNum(Math.round(sigSession.baseH * (scale / 100)), 16, maskCanvas.height);
+    box.x = clampNum(Math.round(cx - box.w / 2), 0, Math.max(0, maskCanvas.width - box.w));
+    box.y = clampNum(Math.round(cy - box.h / 2), 0, Math.max(0, maskCanvas.height - box.h));
+    requestSigRender();
+  });
+  $("sig-darkness-slider").addEventListener("input", () => {
+    if (!sigSession || busy) return;
+    sigSession.darkness = Number($("sig-darkness-slider").value) || 88;
+    requestSigRender();
+  });
+  $("sig-rotate-slider").addEventListener("input", () => {
+    if (!sigSession || busy) return;
+    sigSession.rotate = Number($("sig-rotate-slider").value) || 0;
+    requestSigRender();
+  });
+  $("btn-reset-sig-transform").addEventListener("click", () => {
+    if (!sigSession || busy) return;
+    sigSession.darkness = 88;
+    sigSession.rotate = 0;
+    $("sig-darkness-slider").value = "88";
+    $("sig-rotate-slider").value = "0";
+    $("sig-scale-slider").value = "100";
+    sigSession.box = defaultSigBox(sigSession.image);
+    sigSession.baseW = sigSession.box.w;
+    sigSession.baseH = sigSession.box.h;
+    requestSigRender();
+  });
+  function sigPinchMetrics() {
+    const [a, b] = [...sigSession.pointers.values()];
+    return {
+      distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+    };
+  }
+  editorStage.addEventListener("pointerdown", (event) => {
+    if (!signatureActive || !sigSession || busy || event.button !== 0) return;
+    event.preventDefault();
+    const session = sigSession;
+    session.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    editorStage.setPointerCapture(event.pointerId);
+    if (session.pointers.size >= 2) {
+      session.drag = null;
+      if (!session.gesture)
+        session.gesture = {
+          ...sigPinchMetrics(),
+          zoom: session.zoom,
+          panX: session.panX,
+          panY: session.panY,
+        };
+      requestSigRender();
+      return;
+    }
+    if (session.gesture) return;
+    const point = maskPoint(event);
+    const box = session.box;
+    const corner = textCornerAt(point, box);
+    const inside =
+      point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h;
+    if (corner) session.drag = { mode: "resize", corner, start: point, orig: { ...box } };
+    else if (inside) session.drag = { mode: "move", start: point, orig: { ...box } };
+    else
+      session.drag = {
+        mode: "pan",
+        start: { x: event.clientX, y: event.clientY },
+        panX: session.panX,
+        panY: session.panY,
+        orig: { ...box },
+      };
+    requestSigRender();
+  });
+  editorStage.addEventListener("pointermove", (event) => {
+    if (!signatureActive || !sigSession || busy || !sigSession.pointers.has(event.pointerId)) return;
+    const session = sigSession;
+    session.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (session.gesture) {
+      if (session.pointers.size < 2) return;
+      const metric = sigPinchMetrics(),
+        origin = session.gesture;
+      session.zoom = clampNum((origin.zoom * metric.distance) / origin.distance, 1, 4);
+      session.panX = origin.panX + metric.x - origin.x;
+      session.panY = origin.panY + metric.y - origin.y;
+      updateSigTransform();
+      return;
+    }
+    const drag = session.drag;
+    if (!drag) return;
+    const point = maskPoint(event);
+    const box = session.box;
+    if (drag.mode === "move") {
+      box.x = clampNum(drag.orig.x + point.x - drag.start.x, 0, Math.max(0, maskCanvas.width - box.w));
+      box.y = clampNum(drag.orig.y + point.y - drag.start.y, 0, Math.max(0, maskCanvas.height - box.h));
+    } else if (drag.mode === "resize") {
+      const orig = drag.orig;
+      const oldDiag = Math.max(1, Math.hypot(orig.w, orig.h));
+      const newDiag = Math.hypot(point.x - (orig.x + orig.w / 2), point.y - (orig.y + orig.h / 2)) * 2;
+      const factor = clampNum(newDiag / oldDiag, 0.15, 4);
+      const cx = orig.x + orig.w / 2,
+        cy = orig.y + orig.h / 2;
+      box.w = clampNum(Math.round(orig.w * factor), 30, maskCanvas.width);
+      box.h = clampNum(Math.round(orig.h * factor), 16, maskCanvas.height);
+      box.x = clampNum(Math.round(cx - box.w / 2), 0, Math.max(0, maskCanvas.width - box.w));
+      box.y = clampNum(Math.round(cy - box.h / 2), 0, Math.max(0, maskCanvas.height - box.h));
+      $("sig-scale-slider").value = String(
+        clampNum(Math.round((box.w / Math.max(1, session.baseW)) * 100), 15, 250),
+      );
+    } else if (drag.mode === "pan") {
+      const dx = event.clientX - drag.start.x,
+        dy = event.clientY - drag.start.y;
+      if (session.zoom > 1) {
+        session.panX = drag.panX + dx;
+        session.panY = drag.panY + dy;
+        updateSigTransform();
+      } else {
+        const rect = maskCanvas.getBoundingClientRect();
+        const sx = maskCanvas.width / Math.max(1, rect.width),
+          sy = maskCanvas.height / Math.max(1, rect.height);
+        box.x = clampNum(drag.orig.x + dx * sx, 0, Math.max(0, maskCanvas.width - box.w));
+        box.y = clampNum(drag.orig.y + dy * sy, 0, Math.max(0, maskCanvas.height - box.h));
+      }
+    }
+    requestSigRender();
+  });
+  function endSigPointer(event) {
+    if (!signatureActive || !sigSession?.pointers.has(event.pointerId)) return;
+    const session = sigSession;
+    if (event.type === "pointerup") session.drag = null;
+    session.pointers.delete(event.pointerId);
+    if (!session.pointers.size) session.gesture = null;
+    if (editorStage.hasPointerCapture(event.pointerId))
+      editorStage.releasePointerCapture(event.pointerId);
+    requestSigRender();
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) =>
+    editorStage.addEventListener(type, endSigPointer),
+  );
+  editorStage.addEventListener(
+    "wheel",
+    (event) => {
+      if (!signatureActive || !sigSession || !event.ctrlKey) return;
+      event.preventDefault();
+      zoomSig(sigSession.zoom + (event.deltaY < 0 ? 0.15 : -0.15));
+    },
+    { passive: false },
+  );
+  // Signature source modal: drawpad.
+  function sigPadPoint(event) {
+    const pad = $("sig-draw-canvas");
+    const rect = pad.getBoundingClientRect();
+    return {
+      x: clampNum(((event.clientX - rect.left) * pad.width) / Math.max(1, rect.width), 0, pad.width),
+      y: clampNum(((event.clientY - rect.top) * pad.height) / Math.max(1, rect.height), 0, pad.height),
+    };
+  }
+  function redrawSigPad() {
+    const pad = $("sig-draw-canvas");
+    const ctx = pad.getContext("2d");
+    ctx.clearRect(0, 0, pad.width, pad.height);
+    ctx.strokeStyle = "#1f2430";
+    ctx.lineCap = ctx.lineJoin = "round";
+    for (const stroke of sigDrawStrokes) {
+      if (!stroke.points.length) continue;
+      ctx.lineWidth = stroke.width;
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+      for (let i = 1; i < stroke.points.length; i++)
+        ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      ctx.stroke();
+    }
+    if (sigDrawCurrent && sigDrawCurrent.points.length) {
+      ctx.lineWidth = sigDrawCurrent.width;
+      ctx.beginPath();
+      ctx.moveTo(sigDrawCurrent.points[0].x, sigDrawCurrent.points[0].y);
+      for (let i = 1; i < sigDrawCurrent.points.length; i++)
+        ctx.lineTo(sigDrawCurrent.points[i].x, sigDrawCurrent.points[i].y);
+      ctx.stroke();
+    }
+    $("btn-sig-use-drawn").disabled = !sigDrawStrokes.length;
+  }
+  function openSigSourceModal() {
+    sigDrawStrokes = [];
+    sigDrawCurrent = null;
+    redrawSigPad();
+    const dialog = $("signature-source-modal");
+    if (!dialog.open) dialog.showModal();
+  }
+  // A dialog closing on its own (X, Esc) aborts the flow; closing it to hand
+  // over to the next dialog must not.
+  function closeSigDialog(dialog) {
+    if (!dialog.open) return;
+    sigAdvancing = true;
+    dialog.close();
+  }
+  $("sig-source-close").addEventListener("click", () => $("signature-source-modal").close());
+  $("signature-source-modal").addEventListener("close", () => {
+    if (sigAdvancing) {
+      sigAdvancing = false;
+      return;
+    }
+    if (signatureActive && !sigSession) closeSig();
+  });
+  $("sig-draw-canvas").addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const pad = $("sig-draw-canvas");
+    pad.setPointerCapture(event.pointerId);
+    sigDrawCurrent = {
+      width: Number($("sig-pen-width").value) || 3,
+      points: [sigPadPoint(event)],
+    };
+    redrawSigPad();
+  });
+  $("sig-draw-canvas").addEventListener("pointermove", (event) => {
+    if (!sigDrawCurrent) return;
+    const samples =
+      typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    for (const sample of samples.length ? samples : [event]) {
+      const point = sigPadPoint(sample);
+      const points = sigDrawCurrent.points;
+      const prev = points[points.length - 1];
+      if (Math.hypot(point.x - prev.x, point.y - prev.y) >= 1.5) points.push(point);
+    }
+    redrawSigPad();
+  });
+  function endSigPadStroke(event) {
+    if (!sigDrawCurrent) return;
+    if (event.type === "pointerup" && sigDrawCurrent.points.length >= 2)
+      sigDrawStrokes.push(sigDrawCurrent);
+    sigDrawCurrent = null;
+    redrawSigPad();
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) =>
+    $("sig-draw-canvas").addEventListener(type, endSigPadStroke),
+  );
+  $("btn-sig-draw-undo").addEventListener("click", () => {
+    sigDrawStrokes.pop();
+    redrawSigPad();
+  });
+  $("btn-sig-draw-clear").addEventListener("click", () => {
+    sigDrawStrokes = [];
+    sigDrawCurrent = null;
+    redrawSigPad();
+  });
+  function inkBoundsFromAlpha(source, alphaThreshold = 10) {
+    const w = source.width,
+      h = source.height;
+    const ctx = source.getContext("2d", { willReadFrequently: true });
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let minX = w,
+      minY = h,
+      maxX = -1,
+      maxY = -1;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3] > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    if (maxX < 0) return null;
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  }
+  $("btn-sig-use-drawn").addEventListener("click", () => {
+    const pad = $("sig-draw-canvas");
+    const bounds = inkBoundsFromAlpha(pad, 10);
+    if (!bounds) return;
+    const padPx = 10;
+    const x = clampNum(bounds.x - padPx, 0, pad.width - 1);
+    const y = clampNum(bounds.y - padPx, 0, pad.height - 1);
+    const w = Math.min(bounds.w + padPx * 2, pad.width - x);
+    const h = Math.min(bounds.h + padPx * 2, pad.height - y);
+    const clean = document.createElement("canvas");
+    clean.width = Math.max(2, w);
+    clean.height = Math.max(2, h);
+    clean.getContext("2d").drawImage(pad, x, y, w, h, 0, 0, clean.width, clean.height);
+    savedSignature = { canvas: clone(clean), ink: "black", darkness: 88, rotate: 0 };
+    startSigPlacement(clean);
+    closeSigDialog($("signature-source-modal"));
+  });
+  $("btn-sig-scan").addEventListener("click", () => $("sig-scan-input").click());
+  $("btn-sig-upload").addEventListener("click", () => $("sig-upload-input").click());
+  async function handleSigFile(input) {
+    const file = input.files && input.files[0];
+    input.value = "";
+    if (!file) return;
+    try {
+      const dataUrl = await readFile(file);
+      const image = await loadImage(dataUrl);
+      openSigCrop(image);
+    } catch (error) {
+      fail("Could not load that signature image.", error);
+    }
+  }
+  $("sig-scan-input").addEventListener("change", (event) => handleSigFile(event.target));
+  $("sig-upload-input").addEventListener("change", (event) => handleSigFile(event.target));
+  // Signature B&W conversion + crop popup + background removal.
+  function convertSignatureToBw(source, threshold) {
+    const srcW = source.naturalWidth || source.width,
+      srcH = source.naturalHeight || source.height;
+    const scale = Math.min(1, 1600 / Math.max(srcW, srcH));
+    const w = Math.max(2, Math.round(srcW * scale)),
+      h = Math.max(2, Math.round(srcH * scale));
+    const work = document.createElement("canvas");
+    work.width = w;
+    work.height = h;
+    const wctx = work.getContext("2d", { willReadFrequently: true });
+    wctx.fillStyle = "#ffffff";
+    wctx.fillRect(0, 0, w, h);
+    wctx.drawImage(source, 0, 0, w, h);
+    const imageData = wctx.getImageData(0, 0, w, h);
+    const data = imageData.data;
+    // Coarse illumination field from a heavily downscaled copy.
+    const smallW = Math.max(2, Math.min(96, Math.round(w / 12)));
+    const smallH = Math.max(2, Math.min(96, Math.round(h / 12)));
+    const small = document.createElement("canvas");
+    small.width = smallW;
+    small.height = smallH;
+    const sctx = small.getContext("2d", { willReadFrequently: true });
+    sctx.drawImage(work, 0, 0, smallW, smallH);
+    const smallData = sctx.getImageData(0, 0, smallW, smallH).data;
+    const bg = new Float32Array(smallW * smallH);
+    for (let i = 0; i < smallW * smallH; i++) {
+      const o = i * 4;
+      bg[i] = 0.2126 * smallData[o] + 0.7152 * smallData[o + 1] + 0.0722 * smallData[o + 2];
+    }
+    const cutoff = clampNum(Number(threshold) || 55, 10, 90);
+    for (let y = 0; y < h; y++) {
+      const fy = clampNum(((y + 0.5) * smallH) / h - 0.5, 0, smallH - 1);
+      const y0 = Math.floor(fy),
+        y1 = Math.min(y0 + 1, smallH - 1),
+        wy = fy - y0;
+      for (let x = 0; x < w; x++) {
+        const fx = clampNum(((x + 0.5) * smallW) / w - 0.5, 0, smallW - 1);
+        const x0 = Math.floor(fx),
+          x1 = Math.min(x0 + 1, smallW - 1),
+          wx = fx - x0;
+        const paper =
+          bg[y0 * smallW + x0] * (1 - wx) * (1 - wy) +
+          bg[y0 * smallW + x1] * wx * (1 - wy) +
+          bg[y1 * smallW + x0] * (1 - wx) * wy +
+          bg[y1 * smallW + x1] * wx * wy;
+        const o = (y * w + x) * 4;
+        const lum = 0.2126 * data[o] + 0.7152 * data[o + 1] + 0.0722 * data[o + 2];
+        const darkness = paper - lum;
+        const gray =
+          darkness <= cutoff ? 255 : Math.max(0, Math.round(255 - (darkness - cutoff) * 2.2));
+        data[o] = data[o + 1] = data[o + 2] = gray;
+        data[o + 3] = 255;
+      }
+    }
+    wctx.putImageData(imageData, 0, 0);
+    return work;
+  }
+  function findInkBounds(bwCanvas, grayThreshold = 200) {
+    const w = bwCanvas.width,
+      h = bwCanvas.height;
+    const data = bwCanvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+    let minX = w,
+      minY = h,
+      maxX = -1,
+      maxY = -1;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4] < grayThreshold) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    if (maxX < 0) return null;
+    const pad = 10;
+    return {
+      x: clampNum(minX - pad, 0, w - 1),
+      y: clampNum(minY - pad, 0, h - 1),
+      w: Math.min(maxX - minX + 1 + pad * 2, w - clampNum(minX - pad, 0, w - 1)),
+      h: Math.min(maxY - minY + 1 + pad * 2, h - clampNum(minY - pad, 0, h - 1)),
+    };
+  }
+  function cleanSignatureFromBw(bwCanvas, crop) {
+    const clean = document.createElement("canvas");
+    clean.width = Math.max(2, Math.round(crop.w));
+    clean.height = Math.max(2, Math.round(crop.h));
+    const ctx = clean.getContext("2d");
+    const srcCtx = bwCanvas.getContext("2d", { willReadFrequently: true });
+    const srcData = srcCtx.getImageData(
+      Math.round(crop.x),
+      Math.round(crop.y),
+      clean.width,
+      clean.height,
+    ).data;
+    const out = ctx.createImageData(clean.width, clean.height);
+    for (let i = 0; i < clean.width * clean.height; i++) {
+      const gray = srcData[i * 4];
+      let alpha = Math.round((255 - gray) * 1.35);
+      if (alpha < 12) alpha = 0;
+      out.data[i * 4] = 0;
+      out.data[i * 4 + 1] = 0;
+      out.data[i * 4 + 2] = 0;
+      out.data[i * 4 + 3] = clampNum(alpha, 0, 255);
+    }
+    ctx.putImageData(out, 0, 0);
+    return clean;
+  }
+  function updateSigCropBoxUI() {
+    if (!sigBwCanvas || !sigCropBox) return;
+    const box = $("sig-crop-box");
+    box.style.left = `${(sigCropBox.x / sigBwCanvas.width) * 100}%`;
+    box.style.top = `${(sigCropBox.y / sigBwCanvas.height) * 100}%`;
+    box.style.width = `${(sigCropBox.w / sigBwCanvas.width) * 100}%`;
+    box.style.height = `${(sigCropBox.h / sigBwCanvas.height) * 100}%`;
+  }
+  function updateSigCleanPreview() {
+    if (!sigBwCanvas || !sigCropBox) return;
+    const clean = cleanSignatureFromBw(sigBwCanvas, sigCropBox);
+    const preview = $("sig-clean-preview-canvas");
+    const scale = Math.min(1, 600 / Math.max(clean.width, clean.height));
+    preview.width = Math.max(2, Math.round(clean.width * scale));
+    preview.height = Math.max(2, Math.round(clean.height * scale));
+    preview.getContext("2d").drawImage(clean, 0, 0, preview.width, preview.height);
+    clean.width = clean.height = 1;
+  }
+  function refreshSigBw() {
+    if (!sigSourceImage) return;
+    const threshold = Number($("sig-bw-threshold").value) || 55;
+    $("sig-bw-threshold-val").textContent = `${threshold}%`;
+    sigBwCanvas = convertSignatureToBw(sigSourceImage, threshold);
+    const canvas = $("sig-crop-canvas");
+    canvas.width = sigBwCanvas.width;
+    canvas.height = sigBwCanvas.height;
+    canvas.getContext("2d").drawImage(sigBwCanvas, 0, 0);
+    if (sigCropBox) {
+      sigCropBox.x = clampNum(sigCropBox.x, 0, sigBwCanvas.width - 10);
+      sigCropBox.y = clampNum(sigCropBox.y, 0, sigBwCanvas.height - 10);
+      sigCropBox.w = clampNum(sigCropBox.w, 20, sigBwCanvas.width - sigCropBox.x);
+      sigCropBox.h = clampNum(sigCropBox.h, 20, sigBwCanvas.height - sigCropBox.y);
+    }
+    updateSigCropBoxUI();
+    updateSigCleanPreview();
+  }
+  function openSigCrop(image) {
+    sigSourceImage = image;
+    sigCropConfirmed = false;
+    closeSigDialog($("signature-source-modal"));
+    refreshSigBw();
+    sigCropBox = findInkBounds(sigBwCanvas) || {
+      x: 0,
+      y: 0,
+      w: sigBwCanvas.width,
+      h: sigBwCanvas.height,
+    };
+    updateSigCropBoxUI();
+    updateSigCleanPreview();
+    const dialog = $("signature-crop-modal");
+    if (!dialog.open) dialog.showModal();
+  }
+  $("sig-crop-close").addEventListener("click", () => $("signature-crop-modal").close());
+  $("signature-crop-modal").addEventListener("close", () => {
+    if (sigAdvancing) {
+      sigAdvancing = false;
+      return;
+    }
+    if (sigCropConfirmed) return;
+    if (signatureActive && !sigSession) openSigSourceModal();
+  });
+  $("btn-sig-crop-back").addEventListener("click", () => {
+    $("signature-crop-modal").close();
+  });
+  $("btn-sig-crop-autofit").addEventListener("click", () => {
+    if (!sigBwCanvas) return;
+    sigCropBox = findInkBounds(sigBwCanvas) || sigCropBox;
+    updateSigCropBoxUI();
+    updateSigCleanPreview();
+  });
+  $("btn-sig-crop-full").addEventListener("click", () => {
+    if (!sigBwCanvas) return;
+    sigCropBox = { x: 0, y: 0, w: sigBwCanvas.width, h: sigBwCanvas.height };
+    updateSigCropBoxUI();
+    updateSigCleanPreview();
+  });
+  $("sig-bw-threshold").addEventListener("input", refreshSigBw);
+  $("btn-sig-crop-confirm").addEventListener("click", () => {
+    if (!sigBwCanvas || !sigCropBox) return;
+    const clean = cleanSignatureFromBw(sigBwCanvas, sigCropBox);
+    if (!inkBoundsFromAlpha(clean, 12)) {
+      notice("No signature ink found in the crop. Adjust the crop or B&W contrast.", true);
+      clean.width = clean.height = 1;
+      return;
+    }
+    savedSignature = { canvas: clone(clean), ink: "black", darkness: 88, rotate: 0 };
+    sigCropConfirmed = true;
+    startSigPlacement(clean);
+    closeSigDialog($("signature-crop-modal"));
+  });
+  function sigCropPoint(event) {
+    const canvas = $("sig-crop-canvas");
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clampNum(((event.clientX - rect.left) * canvas.width) / Math.max(1, rect.width), 0, canvas.width),
+      y: clampNum(((event.clientY - rect.top) * canvas.height) / Math.max(1, rect.height), 0, canvas.height),
+    };
+  }
+  $("sig-crop-box").addEventListener("pointerdown", (event) => {
+    if (!sigCropBox || !sigBwCanvas) return;
+    event.preventDefault();
+    const box = $("sig-crop-box");
+    box.setPointerCapture(event.pointerId);
+    const corner = event.target.dataset?.corner || null;
+    sigCropDrag = {
+      mode: corner ? "resize" : "move",
+      corner,
+      start: sigCropPoint(event),
+      orig: { ...sigCropBox },
+    };
+  });
+  $("sig-crop-box").addEventListener("pointermove", (event) => {
+    if (!sigCropDrag || !sigCropBox || !sigBwCanvas) return;
+    const point = sigCropPoint(event);
+    const dx = point.x - sigCropDrag.start.x,
+      dy = point.y - sigCropDrag.start.y;
+    const orig = sigCropDrag.orig;
+    const W = sigBwCanvas.width,
+      H = sigBwCanvas.height;
+    if (sigCropDrag.mode === "move") {
+      sigCropBox.x = clampNum(orig.x + dx, 0, W - orig.w);
+      sigCropBox.y = clampNum(orig.y + dy, 0, H - orig.h);
+    } else {
+      let { x, y, w, h } = orig;
+      if (sigCropDrag.corner === "br") {
+        w = orig.w + dx;
+        h = orig.h + dy;
+      } else if (sigCropDrag.corner === "tr") {
+        w = orig.w + dx;
+        h = orig.h - dy;
+        y = orig.y + dy;
+      } else if (sigCropDrag.corner === "bl") {
+        w = orig.w - dx;
+        h = orig.h + dy;
+        x = orig.x + dx;
+      } else {
+        w = orig.w - dx;
+        h = orig.h - dy;
+        x = orig.x + dx;
+        y = orig.y + dy;
+      }
+      w = clampNum(w, 20, W);
+      h = clampNum(h, 20, H);
+      if (sigCropDrag.corner === "tl" || sigCropDrag.corner === "bl") x = orig.x + orig.w - w;
+      if (sigCropDrag.corner === "tl" || sigCropDrag.corner === "tr") y = orig.y + orig.h - h;
+      sigCropBox.x = clampNum(x, 0, W - w);
+      sigCropBox.y = clampNum(y, 0, H - h);
+      sigCropBox.w = w;
+      sigCropBox.h = h;
+    }
+    updateSigCropBoxUI();
+    updateSigCleanPreview();
+  });
+  function endSigCropDrag(event) {
+    if (!sigCropDrag) return;
+    sigCropDrag = null;
+    if ($("sig-crop-box").hasPointerCapture(event.pointerId))
+      $("sig-crop-box").releasePointerCapture(event.pointerId);
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) =>
+    $("sig-crop-box").addEventListener(type, endSigCropDrag),
+  );
+  // Shared Escape handling for the two new editors (dialogs handle their own).
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const tag = String(event.target?.tagName || "").toLowerCase();
+    if (["textarea", "input", "select"].includes(tag)) return;
+    if ($("signature-source-modal").open || $("signature-crop-modal").open) return;
+    if (textActive && !busy) {
+      event.preventDefault();
+      closeText();
+    } else if (signatureActive && !busy) {
+      event.preventDefault();
+      closeSig();
+    }
+  });
+
   // IndexedDB writes are only considered saved when the transaction completes.
   const DB_NAME = "ProScanDB",
     STORE_NAME = "pages";
@@ -2104,7 +3846,7 @@
     }
   }
   $("btn-save-page").addEventListener("click", async () => {
-    if (busy || saving || eraseActive) return;
+    if (busy || saving || eraseActive || textActive || signatureActive) return;
     try {
       const existing = documentPages.find((page) => page.id === activePageId);
       const page = {
@@ -2693,7 +4435,11 @@
       return false;
     }
     if (
-      (dirty || !storageAvailable || (eraseActive && eraseCommands().length)) &&
+      (dirty ||
+        !storageAvailable ||
+        (eraseActive && eraseCommands().length) ||
+        (textActive && textSession?.text?.trim()) ||
+        signatureActive) &&
       !confirm(
         "Unsaved edits or memory-only pages may be lost. Export or save them first. Reload anyway?",
       )
@@ -2751,7 +4497,9 @@
       saving ||
       busy ||
       !storageAvailable ||
-      (eraseActive && eraseCommands().length)
+      (eraseActive && eraseCommands().length) ||
+      (textActive && textSession?.text?.trim()) ||
+      signatureActive
     ) {
       event.preventDefault();
       event.returnValue = "";
@@ -2869,7 +4617,14 @@
 
   function memoryBlocked() {
     return (
-      busy || saving || eraseActive || filterSession || shareSession || drawing
+      busy ||
+      saving ||
+      eraseActive ||
+      textActive ||
+      signatureActive ||
+      filterSession ||
+      shareSession ||
+      drawing
     );
   }
   $("btn-memory").addEventListener("click", () => {

@@ -1,6 +1,35 @@
-# Stage 4.2 + Local PDF Import verification — 16 November 2026
+# Stage 4.3 — Smart Add Text + Add Signature verification — 16 November 2026
 
-Non-AI local repair + Clone + local PDF upload release. No model weights, AI runtime, server/API or external CDN dependency added.
+Local-only Add Text and Add Signature release, on top of Stage 4.2 (local PDF import, repair preview, Clone). No model weights, AI runtime, server/API, external CDN dependency or new upload path added. IndexedDB schema untouched.
+
+## New Add Text checks — PASS (Chromium, 61-check suite)
+
+- **Text** opens the editor panel, sets `body.text-editing`, and auto-samples the page on entry: an 8-connected-component pass over the document canvas measures cap height, median horizontal ink-run stroke width, serif cue rows and glyph-width consistency, and picked document serif + `#2f3135` on a Georgia-set fixture — the match is derived from pixels, not defaults.
+- Matcher accuracy grid (11 synthetic pages, Georgia / Times / Arial / Calibri / Courier, 18–34 px, 400–700): **font family 11/11 correct**, **weight within one step on 10/11** (one 600 reported as 700). Size landed within ~10% of the CSS pixel size. Samples too small or too sparse fall back to defaults by design.
+- Typing text paints the live overlay on `#canvas-mask` (non-zero alpha pixels) and enables **Apply Text** only when the field is non-blank.
+- **Auto-fit to box** reduced the size when a much longer sentence was typed (no overflow), and multi-line text is supported.
+- Dragging the box moved the overlay (measured min-ink-row shifted upward); corner handles resize; **Target box** and **⊕ Sample text** drag selections re-sample or re-target the fit.
+- **Apply Text** changed `canvas-final` pixels, closed the panel, cleared `body.text-editing`, and enabled **Undo edit**. Undo restored the page to the exact pre-apply pixel checksum.
+- **Cancel** left `canvas-final` byte-identical and reset `#canvas-mask` to 1×1.
+- **Cover old text underneath** paints a `PaperMatch` paper-texture patch in the box before drawing the glyphs (same tile field used by Rectangle/Pen).
+
+## New Add Signature checks — PASS (Chromium, 61-check suite)
+
+- **Signature** opens the source dialog with the drawpad, Scan (Camera) and Upload paths; **Use Drawn Signature** is disabled until a stroke exists.
+- Drawpad captured a pointer stroke (coalesced events, min-distance filtering), rendered ink, and **Use Drawn Signature** trimmed to ink and switched to placement with `body.sig-editing` and a live preview on the overlay canvas.
+- **Scanned Black / Ballpoint Blue / Dark Charcoal** retint correctly: after choosing Ballpoint Blue the preview's mean blue channel rose by >20 over Scanned Black. **Size**, **Ink darkness** and **Angle** sliders update the preview; **Reset size** restores 100%.
+- Upload path on a synthetic unevenly-lit paper "photo": B&W conversion (illumination-field subtraction + threshold) kept the ink while flattening >50% of the canvas to white; the **Crop Signature** popup opened with the box auto-fitted around the ink; the live **background removed** preview showed >50% fully transparent pixels (paper removed) with ink retained opaque; drag on a corner handle resized the crop box; the **B&W contrast** slider re-converted live; **Autofit** re-fitted; **Use This Signature** returned to placement with the panel open and the dialog closed.
+- **Apply Signature** changed page pixels and enabled **Undo edit**; the signature is remembered in memory.
+- **Multi-page reuse:** after saving page 1 and importing page 2, **Signature** went straight to placement — the source dialog was skipped and the saved signature preview painted on the new page, then applied successfully.
+- **Draw / Scan / Upload** and **Change signature** correctly reopen the source dialog for a replacement; closing the dialog without producing a signature aborts cleanly instead of leaving the editor stranded.
+
+## Regression checks — PASS
+
+- Filters modal (open → select → preview → confirm), Erase tools (open → cancel), Rotate, Add to Doc, gallery (2 pages) and Export all still work after using both new tools.
+- No uncaught page errors or console errors across the whole 61-check session.
+- All editor entry points are mutually exclusive: Text/Signature are blocked while filters, erase, crop, rotate, back or save are active, and vice versa; `safeToReload()`, `beforeunload` and `memoryBlocked()` treat both sessions as unsaved work.
+
+## Stage 4.2 verification (retained) — PASS
 
 ## New Local PDF Import checks — PASS
 

@@ -11,7 +11,7 @@
       name="description"
       content="Local-first document cropping, document filters and PDF export."
     />
-    <title>ProScan Studio | Stage 4.2</title>
+    <title>ProScan Studio | Stage 4.3</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="manifest.json" />
     <link rel="stylesheet" href="style.css" />
@@ -142,7 +142,7 @@
           Back to document
         </button>
         <p class="footnote">
-          Stage 4.2 · Document filters · local processing. Advanced AI is not
+          Stage 4.3 · Add Text · Add Signature · local processing. Advanced AI is not
           enabled.
         </p>
       </div>
@@ -199,6 +199,8 @@
           <div class="tool-group">
             <button id="btn-open-filters" class="tool-btn">Filters</button
             ><button id="btn-open-erase" class="tool-btn">Erase tools</button
+            ><button id="btn-open-text" class="tool-btn">Text</button
+            ><button id="btn-open-signature" class="tool-btn">Signature</button
             ><button id="btn-undo-edit" class="tool-btn" disabled>
               Undo edit
             </button>
@@ -529,6 +531,281 @@
               >Erase <small>Local · Stage 4.2</small></span
             ><button id="btn-apply-erase" class="tool-btn primary" disabled>
               Apply
+            </button>
+          </div>
+        </section>
+        <section
+          id="text-panel"
+          class="erase-studio erase-sheet text-sheet"
+          aria-label="Add matched document text"
+          hidden
+        >
+          <div class="editor-view-controls" aria-label="Text matching and zoom">
+            <button
+              id="btn-sample-text-style"
+              class="tool-btn"
+              aria-pressed="false"
+              title="Drag over existing document text to match its size, font style and ink color"
+            >
+              ⊕ Sample text
+            </button>
+            <button
+              id="btn-draw-text-box"
+              class="tool-btn"
+              aria-pressed="false"
+              title="Drag a target box on the document where the text must fit"
+            >
+              ⬚ Target box
+            </button>
+            <button
+              id="btn-preview-text-clean"
+              class="tool-btn"
+              aria-pressed="false"
+            >
+              Hide box
+            </button>
+            <span class="control-spacer"></span>
+            <button
+              id="btn-text-zoom-out"
+              class="tool-btn"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <output id="text-zoom" aria-live="polite">100%</output>
+            <button id="btn-text-zoom-in" class="tool-btn" aria-label="Zoom in">
+              +
+            </button>
+            <button id="btn-text-zoom-fit" class="tool-btn">Fit</button>
+          </div>
+          <div class="text-editor-grid">
+            <div class="text-input-row">
+              <textarea
+                id="text-content-input"
+                rows="2"
+                placeholder="Type text to add… (drag on document to position or resize box)"
+                aria-label="Text to add to document"
+              ></textarea>
+            </div>
+            <div class="text-controls-row">
+              <label class="text-field"
+                ><span>Font match</span>
+                <select id="text-font-family">
+                  <option value="sans" selected>
+                    Document Sans (Arial / Helvetica)
+                  </option>
+                  <option value="serif">
+                    Document Serif (Times / Georgia)
+                  </option>
+                  <option value="humanist">
+                    Office Sans (Calibri / Segoe)
+                  </option>
+                  <option value="mono">Typewriter / Form (Courier)</option>
+                  <option value="narrow">Compact Narrow (Condensed)</option>
+                </select>
+              </label>
+              <label class="text-field"
+                ><span>Weight</span>
+                <select id="text-font-weight">
+                  <option value="400">Regular</option>
+                  <option value="500" selected>Medium (Scan match)</option>
+                  <option value="600">Semi-Bold</option>
+                  <option value="700">Bold</option>
+                </select>
+              </label>
+              <label class="text-field text-size-field"
+                ><span
+                  >Size
+                  <output id="text-font-size-value" for="text-font-size"
+                    >28px</output
+                  ></span
+                >
+                <input
+                  id="text-font-size"
+                  type="range"
+                  min="8"
+                  max="140"
+                  value="28"
+                />
+              </label>
+              <label class="text-field text-color-field"
+                ><span>Ink</span>
+                <input
+                  id="text-ink-color"
+                  type="color"
+                  value="#22252a"
+                  aria-label="Matched text ink color"
+                />
+              </label>
+            </div>
+            <div class="text-options-row">
+              <label class="text-check"
+                ><input id="text-auto-fit" type="checkbox" checked /> Auto-fit
+                to box</label
+              >
+              <label class="text-check"
+                ><input id="text-cover-bg" type="checkbox" /> Cover old text
+                underneath</label
+              >
+              <label class="text-inline-slider" for="text-scan-softness"
+                ><span>Scan blend</span>
+                <input
+                  id="text-scan-softness"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value="30"
+                />
+              </label>
+              <label class="text-inline-slider" for="text-letter-spacing"
+                ><span>Spacing</span>
+                <input
+                  id="text-letter-spacing"
+                  type="range"
+                  min="-20"
+                  max="60"
+                  value="0"
+                />
+              </label>
+            </div>
+          </div>
+          <div class="erase-status-line">
+            <p id="text-hint" class="erase-hint">
+              Matched to nearby text. Use “⊕ Sample text” to sample any line, or
+              drag the box handles to fit.
+            </p>
+            <output id="text-match-badge" aria-live="polite"
+              >Auto-matched</output
+            >
+          </div>
+          <div class="modal-actions erase-footer">
+            <button id="btn-cancel-text" class="tool-btn">Cancel</button
+            ><button id="btn-fit-box-to-text" class="tool-btn">
+              Size box to text</button
+            ><span class="erase-title"
+              >Add Text <small>Matched · Local</small></span
+            ><button id="btn-apply-text" class="tool-btn primary" disabled>
+              Apply Text
+            </button>
+          </div>
+        </section>
+        <section
+          id="signature-panel"
+          class="erase-studio erase-sheet sig-sheet"
+          aria-label="Place signature on document"
+          hidden
+        >
+          <div
+            class="editor-view-controls"
+            aria-label="Signature source and zoom"
+          >
+            <button id="btn-change-signature" class="tool-btn">
+              ✎ Draw / Scan / Upload
+            </button>
+            <button
+              id="btn-preview-sig-clean"
+              class="tool-btn"
+              aria-pressed="false"
+            >
+              Hide box
+            </button>
+            <span class="control-spacer"></span>
+            <button
+              id="btn-sig-zoom-out"
+              class="tool-btn"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <output id="sig-zoom" aria-live="polite">100%</output>
+            <button id="btn-sig-zoom-in" class="tool-btn" aria-label="Zoom in">
+              +
+            </button>
+            <button id="btn-sig-zoom-fit" class="tool-btn">Fit</button>
+          </div>
+          <div class="sig-placement-controls">
+            <div
+              class="sig-ink-group"
+              role="group"
+              aria-label="Signature ink color"
+            >
+              <span class="sig-label">Ink:</span>
+              <button
+                type="button"
+                class="tool-btn sig-ink-btn active"
+                data-ink="black"
+                aria-pressed="true"
+              >
+                Scanned Black
+              </button>
+              <button
+                type="button"
+                class="tool-btn sig-ink-btn"
+                data-ink="blue"
+                aria-pressed="false"
+              >
+                Ballpoint Blue
+              </button>
+              <button
+                type="button"
+                class="tool-btn sig-ink-btn"
+                data-ink="charcoal"
+                aria-pressed="false"
+              >
+                Dark Charcoal
+              </button>
+            </div>
+            <div class="sig-sliders-row">
+              <label class="text-inline-slider" for="sig-scale-slider"
+                ><span>Size</span>
+                <input
+                  id="sig-scale-slider"
+                  type="range"
+                  min="15"
+                  max="250"
+                  value="100"
+                />
+              </label>
+              <label class="text-inline-slider" for="sig-darkness-slider"
+                ><span>Ink darkness</span>
+                <input
+                  id="sig-darkness-slider"
+                  type="range"
+                  min="40"
+                  max="100"
+                  value="88"
+                />
+              </label>
+              <label class="text-inline-slider" for="sig-rotate-slider"
+                ><span>Angle</span>
+                <input
+                  id="sig-rotate-slider"
+                  type="range"
+                  min="-25"
+                  max="25"
+                  value="0"
+                />
+              </label>
+            </div>
+          </div>
+          <div class="erase-status-line">
+            <p id="sig-hint" class="erase-hint">
+              Drag the signature to position it or drag a corner handle to
+              resize. Blended into paper texture so it looks signed before
+              scanning.
+            </p>
+            <output id="sig-status-badge" aria-live="polite"
+              >Pre-scan blend</output
+            >
+          </div>
+          <div class="modal-actions erase-footer">
+            <button id="btn-cancel-signature" class="tool-btn">Cancel</button
+            ><button id="btn-reset-sig-transform" class="tool-btn">
+              Reset size</button
+            ><span class="erase-title"
+              >Signature <small>Pre-scan blend</small></span
+            ><button id="btn-apply-signature" class="tool-btn primary">
+              Apply Signature
             </button>
           </div>
         </section>
@@ -938,6 +1215,179 @@
             Download copy</button
           ><button id="share-send" class="tool-btn primary" disabled>
             Preparing…
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog
+      id="signature-source-modal"
+      class="modal sig-source-modal"
+      aria-labelledby="sig-source-title"
+    >
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="sig-source-title">Add Signature</h3>
+          <button
+            type="button"
+            id="sig-source-close"
+            class="modal-close"
+            aria-label="Close signature dialog"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="footnote">
+          Draw your signature below, or scan/upload a signature on paper.
+          Scanned or uploaded signatures are automatically converted to B&amp;W,
+          cropped, and background-removed so the document looks signed before
+          scanning.
+        </p>
+        <div class="sig-pad-wrapper">
+          <canvas
+            id="sig-draw-canvas"
+            width="600"
+            height="220"
+            aria-label="Signature drawing pad"
+          ></canvas>
+          <span class="sig-pad-baseline" aria-hidden="true"
+            >Sign above the line</span
+          >
+        </div>
+        <div class="sig-draw-controls">
+          <label class="text-inline-slider" for="sig-pen-width"
+            ><span>Pen thickness</span>
+            <input id="sig-pen-width" type="range" min="1" max="10" value="3" />
+          </label>
+          <button type="button" id="btn-sig-draw-undo" class="tool-btn">
+            ↶ Undo
+          </button>
+          <button type="button" id="btn-sig-draw-clear" class="tool-btn">
+            Clear pad
+          </button>
+          <button
+            type="button"
+            id="btn-sig-use-drawn"
+            class="tool-btn primary"
+            disabled
+          >
+            Use Drawn Signature
+          </button>
+        </div>
+        <div class="sig-divider">
+          <span>OR SCAN / UPLOAD SIGNATURE FROM PAPER</span>
+        </div>
+        <div class="sig-import-actions">
+          <button type="button" id="btn-sig-scan" class="tool-btn primary">
+            📷 Scan Signature (Camera)
+          </button>
+          <button type="button" id="btn-sig-upload" class="tool-btn">
+            📁 Upload Signature Image
+          </button>
+          <input
+            type="file"
+            id="sig-scan-input"
+            accept="image/*"
+            capture="environment"
+            hidden
+          />
+          <input type="file" id="sig-upload-input" accept="image/*" hidden />
+        </div>
+      </div>
+    </dialog>
+    <dialog
+      id="signature-crop-modal"
+      class="modal sig-crop-modal"
+      aria-labelledby="sig-crop-title"
+    >
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="sig-crop-title">Crop B&amp;W Signature &amp; Remove BG</h3>
+          <button
+            type="button"
+            id="sig-crop-close"
+            class="modal-close"
+            aria-label="Cancel signature crop"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="footnote">
+          Converted to B&amp;W. Drag the crop box or its four corners around
+          your signature; the white paper background will be removed
+          automatically.
+        </p>
+        <div class="sig-crop-stage">
+          <div class="canvas-wrapper sig-crop-wrapper" id="sig-crop-wrapper">
+            <canvas id="sig-crop-canvas"></canvas>
+            <div id="sig-crop-box" class="sig-crop-box">
+              <button
+                type="button"
+                class="sig-crop-handle"
+                data-corner="tl"
+                aria-label="Top left crop handle"
+              ></button>
+              <button
+                type="button"
+                class="sig-crop-handle"
+                data-corner="tr"
+                aria-label="Top right crop handle"
+              ></button>
+              <button
+                type="button"
+                class="sig-crop-handle"
+                data-corner="br"
+                aria-label="Bottom right crop handle"
+              ></button>
+              <button
+                type="button"
+                class="sig-crop-handle"
+                data-corner="bl"
+                aria-label="Bottom left crop handle"
+              ></button>
+            </div>
+          </div>
+        </div>
+        <div class="sig-crop-controls">
+          <label class="text-inline-slider" for="sig-bw-threshold"
+            ><span
+              >B&amp;W contrast
+              <output id="sig-bw-threshold-val" for="sig-bw-threshold"
+                >55%</output
+              ></span
+            >
+            <input
+              id="sig-bw-threshold"
+              type="range"
+              min="10"
+              max="90"
+              value="55"
+            />
+          </label>
+          <button type="button" id="btn-sig-crop-autofit" class="tool-btn">
+            Auto-fit signature
+          </button>
+          <button type="button" id="btn-sig-crop-full" class="tool-btn">
+            Full area
+          </button>
+        </div>
+        <div class="sig-transparent-preview-wrap">
+          <span class="panel-label"
+            >Background-removed preview (transparent)</span
+          >
+          <div class="sig-checkerboard">
+            <canvas id="sig-clean-preview-canvas"></canvas>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-sig-crop-back" class="tool-btn">
+            Back
+          </button>
+          <button
+            type="button"
+            id="btn-sig-crop-confirm"
+            class="tool-btn primary"
+          >
+            Crop &amp; Place on Document
           </button>
         </div>
       </div>

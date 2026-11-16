@@ -1,8 +1,37 @@
-# ProScan Studio — Complete Stage 4.2 (with Local PDF Import)
+# ProScan Studio — Complete Stage 4.3 (Smart Add Text + Add Signature)
 
-Full replacement files for the existing scanner. This release adds **local PDF upload and import (single-page and multi-page PDFs)** alongside **bounded non-AI repair previews and a Clone tool**, while preserving edge-to-edge PDFs, worker filters, manual editing, saved-page compatibility and Compress & Share. No build step, API key or backend is required.
+Full replacement files for the existing scanner. This release adds **Smart Add Text** and **Add Signature** to the document editor, on top of local PDF import, bounded non-AI repair previews and the Clone tool. Everything still runs 100% on-device — no build step, API key, account, upload or backend.
 
-## New — Local PDF Upload & Import
+## New in 4.3 — Smart Add Text
+
+Text is drawn as an editable overlay on the page and only becomes pixels when you tap **Apply Text**.
+
+1. In the editor toolbar tap **Text**. The panel opens and immediately **samples nearby document text**.
+2. Matching runs locally on the page canvas: an 8-connected-component pass finds printed glyphs, measures cap height, stroke-to-height ratio, serif/sans cues and glyph-width consistency, and takes the median ink colour. The result sets font family (document serif, sans, office sans, typewriter, narrow), weight, size and ink colour — shown in the **Matched …** readout.
+3. Type your text. **Auto-fit to box** binary-searches the largest size that fits the box without overflow (multi-line supported).
+4. Fine-tune with **Font match**, **Weight**, **Size**, **Ink**, **Scan softness** and **Spacing** — softness slightly blurs and lightens the glyphs so they blend into the scan.
+5. Position it: drag the box, drag any corner handle to resize, or use **⛶ Target box** and drag the exact area the text must fit (auto-fit then applies to that box). **⊕ Sample text** lets you drag over any printed line to re-sample from it.
+6. **PaperMatch** is reused to paint a real paper-texture patch behind the text when **Cover old text underneath** is on, so erased/blank areas still look like the scanned page.
+7. **Hide box** previews the clean result. **Apply Text** commits it to the page and enables the existing single-level **Undo edit**. **Cancel** discards without touching the page.
+
+The matcher is heuristic, not an OCR/font-recognition model: unusual typefaces, handwriting, heavy shadows or very sparse text can fall back to defaults — then use **⊕ Sample text** or set the controls manually.
+
+## New in 4.3 — Add Signature
+
+Tap **Signature**. If you have already made a signature in this session it is **reused automatically** on later pages.
+
+1. **Draw** on the pad with finger, stylus or mouse (pen thickness, Undo, Clear). **Use Drawn Signature** trims to the ink and goes straight to placement.
+2. Or **Scan Signature (Camera)** / **Upload Signature Image** for a signature on paper.
+3. The image is converted locally to **B&W**: a downscaled copy estimates the paper illumination field, the field is subtracted from every pixel, and the remainder is thresholded by the **B&W contrast** slider. Uneven phone lighting flattens to clean white paper.
+4. The **Crop Signature** popup opens on that B&W image with a crop box auto-fitted around the ink plus four draggable corner handles; drag inside to move. **Autofit** and **Full image** reset it. A live **background removed** preview shows the transparent result while you drag.
+5. **Use This Signature** applies alpha matting — paper becomes fully transparent, ink stays opaque — and returns to the page.
+6. Place it: drag to move, corner-drag or the **Size** slider to scale, **Ink darkness** and **Angle** to tune. **Ink** offers **Scanned Black**, **Ballpoint Blue** and **Dark Charcoal**.
+7. The preview and the commit both composite with a **multiply pre-scan blend** plus a light blur, so the ink sits into the paper texture instead of looking like a pasted sticker.
+8. **Apply Signature** commits (Undo edit available) and remembers the signature for the remaining pages. **Draw / Scan / Upload** replaces it; **Reset size** restores the original placement.
+
+Signatures and text stay in memory only for the current session — nothing is uploaded, and they are not written into IndexedDB.
+
+## Previous release — Local PDF Upload & Import
 
 1. From **Import Document** (or **Add Page** in Document Stack), choose or drag-and-drop a **PDF file** (`.pdf`) in addition to JPEG, PNG or WebP images.
 2. **Single-page PDFs** open directly in the **Manual Crop** studio with the four corners initialized to the full page bounds (`0,0` to `width-1,height-1`) so margins are not clipped unless you move the handles. Drag the corners to crop if needed, or tap **Flatten & Process** to keep the exact full page and proceed to **Filters** and **Erase tools** (`Pen`, `Rectangle`, `Local repair`, `Clone`).
@@ -95,7 +124,7 @@ Requires a current browser with Web Workers, WebAssembly and OffscreenCanvas. No
 1. **Export important documents and back up your current source files first.** Device/browser storage is not a document backup.
 2. Extract `ProScan-Stage-4.2-Complete.zip`. Its root contains `index.html` and the `vendor` folder; there is no extra project-folder wrapper inside the ZIP.
 3. Upload **all extracted files and the entire `vendor/` folder** to the same published directory as your existing `index.html`. Replace old files, do not append code or upload the ZIP itself as the website.
-4. Wait for deployment to finish. Reload while online, save any open edits, then accept the app update notice. The tab title must become **ProScan Studio | Stage 4.2**.
+4. Wait for deployment to finish. Reload while online, save any open edits, then accept the app update notice. The tab title must become **ProScan Studio | Stage 4.3**.
 5. If an older stage still appears, use the app's Refresh button while online after exporting/saving. Do not use browser “Clear site data” if you need your saved documents: it can delete IndexedDB pages.
 6. Run the checklist below on your actual phone before using important documents.
 
@@ -257,7 +286,7 @@ No document is sent to an AI service. This release has no trained handwriting/te
 - Large batches/high-resolution editing may hit memory/quota limits or pause the main thread. Browser/OS process termination cannot always be caught.
 - Offline use requires successful service-worker installation, storage capacity and HTTPS/localhost. First access needs the bundled files; private mode/storage eviction may prevent offline availability.
 - Share opens the compression dialog first, then the final explicit user tap sends/downloads the prepared copy. Native availability depends on browser/device permissions; a successful API response is not proof of recipient delivery.
-- For future releases change `CACHE_NAME` in `sw.js`. The Stage 4.2 cache requests fresh install assets and waits for user acceptance. Do not clear IndexedDB just to update the UI.
+- For future releases change `CACHE_NAME` in `sw.js`. The Stage 4.3 cache requests fresh install assets and waits for user acceptance. Do not clear IndexedDB just to update the UI.
 - Dependencies remain pinned to the previous working versions. No dependency vulnerability/security audit was performed in this stage.
 
 ## Before production
@@ -269,6 +298,6 @@ No document is sent to an AI service. This release has no trained handwriting/te
 5. Test Soft B&W and both binary presets, including fine adjustments.
 6. Test faint print, pencil, stamps, shadows and photos; no filter has universal accuracy.
 7. Export a multi-page PDF and inspect it in your normal viewer/printer.
-8. Test the real Stage 4.1 → Stage 4.2 update, offline reload and native sharing on your own devices.
+8. Test the real Stage 4.2 → Stage 4.3 update, offline reload and native sharing on your own devices.
 
 See `TEST-REPORT.md` for the automated checks actually executed. Passing tests reduces regression risk; it is not a promise that nothing can break on every device or scan.
