@@ -152,18 +152,21 @@
         aria-label="Crop document"
         hidden
       >
-        <div class="toolbar">
-          <div class="tool-group">
-            <span class="tool-label">Manual Crop</span
-            ><button id="btn-crop" class="tool-btn primary" disabled>
-              Flatten &amp; Process
-            </button>
-          </div>
-          <div class="tool-group">
-            <button id="btn-undo" class="tool-btn">Undo crop</button
-            ><button id="btn-reset" class="tool-btn danger">
-              Reset corners</button
-            ><button id="btn-cancel-crop" class="tool-btn">Cancel</button>
+        <div class="crop-sheet">
+          <div class="crop-sheet-head" aria-hidden="true"><i></i></div>
+          <div class="toolbar">
+            <div class="tool-group crop-primary-group">
+              <span class="tool-label">Drag the corners to frame the page</span>
+              <button id="btn-crop" class="tool-btn primary" disabled>
+                Apply crop
+              </button>
+            </div>
+            <div class="tool-group">
+              <button id="btn-undo" class="tool-btn">Undo</button
+              ><button id="btn-reset" class="tool-btn danger">
+                Reset</button
+              ><button id="btn-cancel-crop" class="tool-btn">Cancel</button>
+            </div>
           </div>
         </div>
         <div class="studio-layout">
@@ -172,6 +175,11 @@
             <div class="canvas-wrapper source-wrapper">
               <canvas id="canvas-input"></canvas>
               <div id="handle-container"></div>
+              <div id="crop-loupe" class="crop-loupe" aria-hidden="true" hidden>
+                <canvas id="crop-loupe-canvas"></canvas>
+              </div>
+              <output id="crop-size-readout" class="crop-size-readout" hidden
+              ></output>
             </div>
           </div>
           <div class="stage-panel">
@@ -189,6 +197,53 @@
         aria-label="Edit document"
         hidden
       >
+        <header class="editor-topbar" aria-label="Document">
+          <button
+            id="btn-editor-back"
+            class="topbar-icon"
+            type="button"
+            aria-label="Back to documents"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+          </button>
+          <div class="editor-title">
+            <b id="editor-title-name">Document</b>
+            <span id="editor-title-sub">Page 1</span>
+          </div>
+          <button
+            id="btn-editor-more"
+            class="topbar-icon"
+            type="button"
+            aria-label="More actions"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-controls="editor-more-menu"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+          </button>
+          <div id="editor-more-menu" class="editor-more-menu" role="menu" hidden>
+            <button
+              id="btn-menu-rotate"
+              class="topbar-icon"
+              type="button"
+              role="menuitem"
+              data-forward="btn-rotate"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.6 6" /><path d="M20 5v6h-6" /></svg>
+              <span>Rotate page</span>
+            </button>
+            <button
+              id="btn-menu-back"
+              class="topbar-icon"
+              type="button"
+              role="menuitem"
+              data-forward="btn-back"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6-6 6 6 6" /><path d="M3 12h18" /></svg>
+              <span>Back to import</span>
+            </button>
+          </div>
+        </header>
         <div class="processed-stage">
           <div class="canvas-wrapper" id="document-surface">
             <canvas id="canvas-final"></canvas
@@ -345,7 +400,7 @@
                 <path
                   d="m4 20 12-12 4 4L8 24M15 3l1-2 1 2 2 1-2 1-1 2-1-2-2-1ZM5 6v4M3 8h4"
                 /></svg
-              ><span>Local repair</span>
+              ><span>Patch area</span>
             </button>
             <button
               class="erase-tool"
@@ -361,7 +416,7 @@
                 aria-hidden="true"
               >
                 <path d="M9 3h6v6l3 4v4H6v-4l3-4ZM4 21h16M5 17h14" /></svg
-              ><span>Clone</span>
+              ><span>Copy</span>
             </button>
             <button class="erase-tool" data-tool="pan" aria-pressed="false">
               <svg
@@ -378,36 +433,15 @@
                 /></svg
               ><span>Pan</span>
             </button>
-            <button
-              class="erase-tool"
-              disabled
-              title="Magic selection requires a future detection model"
-            >
-              <span aria-hidden="true">✧</span><span>Magic · later</span>
-            </button>
-            <button
-              class="erase-tool"
-              disabled
-              title="Requires a future detection model"
-            >
-              <span aria-hidden="true">✎</span><span>Handwriting · later</span>
-            </button>
-            <button
-              class="erase-tool"
-              disabled
-              title="Requires a future detection model"
-            >
-              <span aria-hidden="true">A</span><span>Text · later</span>
-            </button>
           </div>
           <section class="sheet-section" data-open="false">
-            <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Repair &amp; clone</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
+            <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Patch area &amp; copy texture</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
           <details class="local-repair-controls" open>
-            <summary>Clone source &amp; result preview</summary>
+            <summary>Copy source &amp; result preview</summary>
             <div class="local-repair-row">
               <button id="btn-clone-source" class="tool-btn">
-                Set clone source</button
-              ><output id="clone-source-status">Clone source not set</output>
+                Set copy source</button
+              ><output id="clone-source-status">Copy source not set</output>
             </div>
             <div class="local-repair-row">
               <button id="btn-preview-repair" class="tool-btn" disabled>
@@ -426,7 +460,7 @@
               before Apply.
             </p>
             <small
-              >Clone copies from the unchanged page, starting at your chosen
+              >Copy texture reads from the unchanged page, starting at your chosen
               source for each stroke. Repair uses small surrounding crops, not
               AI. Cancel stops a running preview.</small
             >
@@ -701,7 +735,7 @@
                 underneath</label
               >
               <label class="text-inline-slider" for="text-scan-softness"
-                ><span>Scan blend</span>
+                ><span>Scan softness</span>
                 <input
                   id="text-scan-softness"
                   type="range"
@@ -762,7 +796,7 @@
             aria-label="Signature source"
           >
             <button id="btn-change-signature" class="tool-btn">
-              ✎ Draw / Scan / Upload
+              Change signature source
             </button>
             <button
               id="btn-preview-sig-clean"
@@ -847,11 +881,11 @@
           <div class="erase-status-line">
             <p id="sig-hint" class="erase-hint">
               Drag the signature to position it or drag a corner handle to
-              resize. Blended into paper texture so it looks signed before
-              scanning.
+              resize. It blends into the paper texture so it looks signed, not
+              pasted.
             </p>
             <output id="sig-status-badge" aria-live="polite"
-              >Pre-scan blend</output
+              >Scan softness</output
             >
           </div>
           </div>
@@ -896,6 +930,26 @@
     >
       <div class="modal-content filter-gallery">
         <div class="sheet-grip" aria-hidden="true"></div>
+        <div class="filter-sheet-head">
+          <button
+            id="filter-cancel"
+            class="sheet-round"
+            aria-label="Cancel filters"
+            title="Cancel changes"
+          >
+            ✕
+          </button>
+          <h3 id="filter-title" class="sheet-title">Filter</h3>
+          <button
+            id="filter-confirm"
+            class="sheet-round primary"
+            aria-label="Confirm filter"
+            title="Apply at full working resolution"
+          >
+            ✓
+          </button>
+        </div>
+
         <div
           class="filter-grid"
           role="group"
@@ -998,19 +1052,10 @@
               ><canvas aria-hidden="true" width="1" height="1"></canvas
               ><span class="thumbnail-loading">Loading…</span></span
             ><span class="filter-name">Magic · legacy</span></button
-          ><button
-            class="filter-item"
-            disabled
-            title="Requires a future detection model"
-          >
-            <span class="filter-preview unavailable"
-              ><span aria-hidden="true">✎</span><small>AI · later</small></span
-            ><span class="filter-name">No Handwriting</span>
-          </button>
         </div>
         <section class="sheet-section filter-adjustments" data-open="false" id="filter-adjustments">
           <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false" id="btn-filter-adjustments">
-            <span>Adjustments</span><span class="section-value" id="filter-adjust-value">tap a filter twice</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            <span>Adjustments</span><span class="section-value" id="filter-adjust-value">Not applied</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="sheet-section-body">
         <div class="filter-controls">
@@ -1091,25 +1136,6 @@
         >
           Preview ready
         </p>
-        <div class="modal-header filter-footer">
-          <button
-            id="filter-cancel"
-            class="modal-close"
-            aria-label="Cancel filters"
-            title="Cancel changes"
-          >
-            ✕
-          </button>
-          <h3 id="filter-title">Filters <small>Worker · Stage 4.2</small></h3>
-          <button
-            id="filter-confirm"
-            class="modal-confirm"
-            aria-label="Confirm filter"
-            title="Apply at full working resolution"
-          >
-            ✓
-          </button>
-        </div>
       </div>
     </dialog>
     <dialog id="memory-modal" class="modal" aria-labelledby="memory-title">
@@ -1341,10 +1367,10 @@
         </div>
         <div class="sig-import-actions">
           <button type="button" id="btn-sig-scan" class="tool-btn primary">
-            📷 Scan Signature (Camera)
+            Scan with camera
           </button>
           <button type="button" id="btn-sig-upload" class="tool-btn">
-            📁 Upload Signature Image
+            Upload signature image
           </button>
           <input
             type="file"

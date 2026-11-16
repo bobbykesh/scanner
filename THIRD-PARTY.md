@@ -32,12 +32,12 @@ These are vendored, pinned copies of the dependency versions in the supplied app
 - `pdf-3.11.174.min.js`: `5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946`
 - `pdf.worker-3.11.174.min.js`: `feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b`
 
-### First-party application files (Stage 5)
+### First-party application files (Stage 6)
 
-- `app.js`: `95a07da53bc0c3a305a8c01347e4c778ecd06b8b1a312817e2e111dfcd8d6467`
-- `index.html`: `486a84c64c8e007e9ae6a3b3c79196ee458e1aa4d1598aacd2a22e34d049a92b`
-- `style.css`: `fe413aedca5514e8d6e4ed08d443a9b405a13053f27c3bd8a3186052a9fbcafd`
-- `sw.js`: `b9c50266fa702cf78b3ad0faf046c1e441660610899501ad1e1f06e7357410c9`
+- `app.js`: `ff5a506a106759f2686f87932550fd1fdb27a4189fa0b3827c8b3bbf0a96bc76`
+- `index.html`: `6c221f7b1ee89cabbf20ac7f91018e1b429c61cec61caf6b451a597ae49d5d72`
+- `style.css`: `e6fced04ec7b6e77ce03f6a1ff13af77e1155382740a96eaf75965a3fe3f4c75`
+- `sw.js`: `f033b6e53f95401132ccfc265107844171f5b0e547b187b122dfbf5edb62fd4a`
 - `manifest.json`: `a135f9410662b70ab943e9ec9c08be24863622357cb8a90242b230a9aae82320`
 - `paper-match.js`: `d43a6690f03539b2c57b61688c94e0926e0e31682e49c051beb886aa1cc74275`
 - `vision.js`: `7f2bdcc170867c9de8b6d85902ca28854974e1b8bf5dea5f1d1014221933173d`

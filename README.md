@@ -1,3 +1,55 @@
+# ProScan Studio — Stage 6 (UX audit + mobile-first interface)
+
+This release is a **presentation-layer refresh**: no feature, flow, id or data
+behaviour changed. It applies a human-centred UX process — heuristic evaluation,
+WCAG 2.2 audit, then targeted design — to the Stage 5 build.
+
+Method, evidence, design tokens and the verification thresholds live in
+`UX-METHODOLOGY.md` (workspace root `design/`), and the acceptance checks are
+reproducible with the `ux-audit` script.
+
+## What the audit found (measured at 390×844, headless Chromium)
+
+| Severity | Finding | Before |
+| --- | --- | --- |
+| S1 | Touch targets under 44px | sheet grip 26px, undo/redo 32px, selects 31px, filter ✕/✓ 40px |
+| S1 | Crop precision | 4 corner handles at 26×26, no magnifier |
+| S1 | Hidden "expand settings" gesture | tapping the selected filter twice was the only way, with no hint |
+| S2 | Text sheet hid content | 437px visible / 516px content → 15% hidden |
+| S2 | Dead placeholders | "Magic · later", "Handwriting · later", "Text · later", "AI · later" |
+| S2 | Jargon | "Local repair", "Clone", "pre-scan blend" |
+| S3 | Dock label contrast | "Add to Doc" 4.47:1 (fails 4.5:1) |
+| S3 | Mixed colour meaning | red Cancel next to indigo Apply |
+
+## What changed (after)
+
+| Area | Now |
+| --- | --- |
+| Targets | **0 controls under 44px** in any phone view; dock items 58px tall |
+| Crop | **44px ring handles**, live 132px magnifier on the dragged corner, corner readout, "Apply crop" as the single primary, crop actions in a bottom sheet |
+| Expand settings | one convention (section header + turning caret), value chips are labelled ("Not applied"), tapping a selected filter still opens adjustments |
+| Text sheet | **0% hidden**, every control visible, selects/sliders at 44px |
+| Erase sheet | tools wrap on a grid (nothing clipped in a scroller), one history row, footer no longer covers the last section |
+| Filters | header row (✕ / Filter / ✓) on top, pinned thumbnail strip, thumbnail + label tiles, 44px buttons |
+| Phone shell | fixed top bar (back / title / ⋯ menu), dock labels 11.5px, "Add to Doc" as the only filled commit button, zoom pill floating under the top bar |
+| Desktop shell | sheets dock as a right-hand inspector so the page centre stays free; filter inspector becomes a thumbnail grid |
+| Copy | "Patch area", "Copy texture", "Scan softness"; emoji-only icons replaced with words (📷/📁 rendered as tofu on some devices) |
+| Motion | `prefers-reduced-motion` disables sheet slide and scroll smoothing |
+| Colour | danger reserved for destructive actions only |
+
+## Verification
+
+- `test-stage5.js` 26/26, `test-text-sig.js` 59/59, `test-full.js` 4/4,
+  `test-pdf-scanner.js` 9/9 — all green after the refresh.
+- Audit thresholds: V1 0 controls <44px, V2 0% hidden in Text/Erase/Filter
+  sheets, V3 ≥4.5:1 text contrast, V4 200% zoom safe, V5 document geometry
+  unchanged across every editor, V6 full keyboard path with visible focus.
+- One test selector was widened (`/Repair|Patch/i`) because the visible copy was
+  renamed; the assertion is unchanged in intent and still exercises the same
+  control.
+
+---
+
 # ProScan Studio — Complete Stage 5 (full-size editor + editable objects)
 
 Full replacement files for the existing scanner. This release rebuilds the editing interface around a **full-size document**, adds a **CamScanner-style tool dock with floating collapsible sheets**, and turns added text and signatures into **editable objects** you can tap, move, resize and re-edit at any time. It keeps Smart Add Text, Add Signature, local PDF import, non-AI repair previews and the Clone tool. Everything still runs 100% on-device — no build step, API key, account, upload or backend.

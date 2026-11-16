@@ -2351,3 +2351,937 @@ body.in-editor #status-message:not([hidden]) {
 body.editing #status-message:not([hidden]) {
   display: none !important;
 }
+
+/* ===================================================================
+   Stage 6 — UI/UX refresh (presentation layer only)
+   Tokens, 44px targets, phone/tablet/desktop shells, 3-step sizes.
+   No behaviour is defined here; every id and class keeps its role.
+   =================================================================== */
+
+:root {
+  /* type */
+  --fs-caption: 0.7rem;   /* 11.2px */
+  --fs-label: 0.72rem;    /* 11.5px */
+  --fs-body-s: 0.78rem;   /* 12.5px */
+  --fs-body: 0.94rem;     /* 15px   */
+  --fs-title: 1.06rem;    /* 17px   */
+  --fs-display: 1.25rem;  /* 20px   */
+  /* targets */
+  --tap-min: 44px;
+  --tap-dense: 40px;
+  /* space (4pt) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
+  /* shape */
+  --r-control: 8px; --r-chip: 11px; --r-item: 13px; --r-sheet: 24px; --r-pill: 999px;
+  /* motion */
+  --t-fast: 0.12s; --t-base: 0.18s; --t-sheet: 0.22s;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* chrome */
+  --topbar-h: 52px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --text-muted: #a9b7c9; /* was #a5b4c8 — lifts muted copy over 4.5:1 */
+}
+.light-theme {
+  --text-muted: #51607a;
+}
+
+/* Real focus rings, never removed. */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Every interactive control gets a 44px floor on touch sizes. */
+@media (max-width: 599px) {
+  .tool-btn,
+  .dock-zoom .dock-btn,
+  .filter-controls .tool-btn,
+  .sig-import-actions .tool-btn,
+  .sheet-section-head {
+    min-height: var(--tap-min);
+  }
+}
+
+/* --- Phone top bar on the editor ---------------------------------- */
+.editor-topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 74;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--topbar-h);
+  padding: 4px 8px;
+  padding-top: calc(4px + env(safe-area-inset-top, 0px));
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--text-main);
+  font-size: var(--fs-body-s);
+  font-weight: 600;
+}
+.topbar-icon:hover:not(:disabled) {
+  background: var(--button);
+}
+.topbar-icon svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+}
+.editor-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  line-height: 1.2;
+}
+.editor-title b {
+  display: block;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.editor-title span {
+  display: block;
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+.editor-more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 8px;
+  min-width: 214px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 44px #000a;
+}
+.editor-more-menu .topbar-icon {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: var(--tap-min);
+}
+#btn-editor-back {
+  display: inline-flex;
+}
+body.in-editor .editor-topbar {
+  display: flex;
+}
+body:not(.in-editor) .editor-topbar {
+  display: none;
+}
+
+/* The page starts below the top bar; sheets still overlay it. */
+body.in-editor #process-view .processed-stage {
+  padding-top: calc(var(--topbar-h) + var(--sp-1) + env(safe-area-inset-top, 0px));
+}
+
+/* Viewport-height safety: the top bar must be subtracted too. */
+body.in-editor #canvas-final {
+  max-height: calc(100dvh - var(--topbar-h) - var(--dock-h, 72px) - 12px);
+}
+
+/* --- Dock: 11.5px labels, 58px items, "Add to Doc" commit button --- */
+.editor-dock {
+  gap: 2px;
+  padding: 6px 6px calc(6px + var(--safe-b));
+}
+.dock-btn {
+  min-height: 58px;
+  min-width: 56px;
+  padding: 6px 6px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  border-radius: var(--r-item);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.dock-btn span {
+  white-space: nowrap;
+}
+.dock-btn svg {
+  width: 22px;
+  height: 22px;
+}
+.dock-btn.dock-primary {
+  min-width: 84px;
+  font-weight: 700;
+  background: var(--primary-dark);
+}
+/* Danger is reserved for destructive actions, never for Cancel. */
+.tool-btn.danger {
+  background: var(--danger);
+  color: #fff;
+}
+#btn-cancel-crop.danger,
+#btn-cancel-erase.danger {
+  background: var(--button);
+  color: var(--text-main);
+}
+@media (max-width: 599px) {
+  /* Dock stays scrollable; the commit button and Back are always reachable. */
+  .editor-dock {
+    gap: 0;
+  }
+  .dock-btn {
+    min-width: 54px;
+    min-height: 58px;
+    padding: 6px 3px;
+    font-size: var(--fs-label);
+  }
+  .dock-btn.dock-primary {
+    min-width: 78px;
+  }
+  .dock-zoom .dock-btn {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+}
+
+/* --- Sheets: one radius, one shadow, zero hidden content ---------- */
+.erase-sheet {
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: 0 -16px 50px #000a;
+  padding: 0 14px calc(10px + var(--safe-b));
+}
+.sheet-grip {
+  height: var(--tap-min);
+  margin-bottom: var(--sp-1);
+}
+.sheet-grip::before {
+  width: 46px;
+  height: 5px;
+  border-radius: 3px;
+}
+.sheet-section-head {
+  min-height: var(--tap-min);
+  padding: 10px 2px;
+  font-size: 0.82rem;
+}
+.sheet-section-head .section-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--button) 70%, transparent);
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+
+/* Unsaved-changes guard is a plain confirm; no new flow. */
+
+/* --- Crop screen: sheet chrome, ring handles, live size ----------- */
+#crop-view {
+  min-height: 100dvh;
+}
+#crop-view .studio-layout {
+  flex: 1 1 auto;
+  padding-bottom: calc(var(--dock-h, 72px) + 104px);
+}
+.crop-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  padding: 0 14px calc(10px + var(--safe-b));
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 -16px 50px #000a;
+}
+.crop-sheet-head {
+  display: grid;
+  place-items: center;
+  height: 22px;
+}
+.crop-sheet-head i {
+  width: 46px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+}
+.crop-sheet .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 0 6px;
+  background: none;
+  border: 0;
+}
+.crop-sheet .tool-group {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+.crop-sheet .crop-primary-group {
+  margin-left: 0;
+  flex: 1 1 100%;
+}
+.crop-sheet .tool-label {
+  display: block;
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.crop-sheet #btn-crop.tool-btn {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-body-s);
+  font-weight: 700;
+  background: var(--primary-dark);
+}
+.crop-sheet .tool-btn {
+  min-height: var(--tap-min);
+  padding: 0 14px;
+  border-radius: var(--r-chip);
+  font-size: var(--fs-body-s);
+}
+@media (max-width: 420px) {
+  .crop-sheet .tool-label {
+    display: none;
+  }
+  .crop-sheet .crop-primary-group {
+    flex: 1 1 auto;
+  }
+  .crop-sheet #btn-crop.tool-btn {
+    flex: 1 1 auto;
+    min-height: 50px;
+  }
+}
+
+/* 44px ring handles with a visible 22px core; drag maths unchanged. */
+.handle {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, #0b1220);
+  box-shadow: 0 0 0 1px #0006, 0 0 14px #0009;
+}
+.handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--accent);
+}
+#crop-view .canvas-wrapper.source-wrapper {
+  overflow: visible;
+}
+
+/* --- Filter sheet: header row (✕ / Filter / ✓) + pinned strip ------- */
+.modal.filter-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  top: auto;
+  bottom: 0;
+  max-height: min(78dvh, 640px);
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: 0 -18px 56px #000b;
+  padding: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.modal.filter-sheet::backdrop {
+  background: #0006;
+}
+.modal.filter-sheet .modal-content.filter-gallery {
+  padding: 0 0 calc(12px + var(--safe-b));
+}
+.filter-sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px 12px 8px;
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+  backdrop-filter: blur(10px);
+}
+.filter-sheet-head .sheet-title {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: var(--fs-title);
+  font-weight: 750;
+  color: var(--text-main);
+}
+.sheet-round {
+  display: grid;
+  place-items: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--button);
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.sheet-round.primary {
+  background: var(--primary-dark);
+  color: #fff;
+}
+.sheet-round:disabled {
+  opacity: 0.45;
+}
+.modal.filter-sheet .sheet-grip {
+  position: static;
+  width: 100%;
+  margin: 0;
+  background: none;
+}
+.modal.filter-sheet .filter-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  padding: 2px 14px 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.modal.filter-sheet .filter-grid::-webkit-scrollbar {
+  display: none;
+}
+.modal.filter-sheet .filter-item {
+  flex: 0 0 100px;
+  scroll-snap-align: center;
+  border-radius: var(--r-chip);
+  min-height: var(--tap-min);
+}
+.modal.filter-sheet .filter-preview {
+  width: 100px;
+  height: 124px;
+  border-radius: 9px;
+}
+.modal.filter-sheet .filter-name {
+  font-size: var(--fs-label);
+}
+@media (max-width: 599px) {
+  .modal.filter-sheet {
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  }
+}
+
+/* --- Sliders: 24px thumb, 6px track ------------------------------- */
+input[type="range"] {
+  height: 24px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+/* --- Text sheet: fit without scrolling ---------------------------- */
+@media (max-width: 599px) {
+  #text-panel.erase-sheet {
+    max-height: min(74dvh, 620px);
+  }
+}
+#text-panel .text-input-row textarea {
+  min-height: 44px;
+}
+#text-panel .sheet-section-head {
+  min-height: var(--tap-min);
+}
+#text-panel .text-check {
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#text-panel .text-check input {
+  width: 22px;
+  height: 22px;
+}
+#text-panel .text-quick-actions .tool-btn,
+#text-panel .text-actions .tool-btn {
+  min-height: var(--tap-min);
+}
+@media (max-width: 599px) {
+  /* Merge the two quiet rows so every control fits above the footer. */
+  #text-panel .text-input-row {
+    gap: 8px;
+  }
+  #text-panel .text-quick-actions {
+    gap: 6px;
+  }
+}
+
+/* --- Erase sheet: 44px tools, no duplicated Undo row --------------- */
+.erase-sheet .editor-view-controls .tool-btn {
+  min-height: var(--tap-min);
+  padding: 0 12px;
+  font-size: var(--fs-label);
+}
+.erase-sheet .erase-tool {
+  min-height: 52px;
+  min-width: 80px;
+  font-size: var(--fs-label);
+}
+.erase-sheet .erase-footer .tool-btn {
+  min-height: var(--tap-min);
+}
+
+/* --- Signature: ink swatches are 44px targets ---------------------- */
+.sig-ink-btn {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+}
+
+/* One expand convention, signposted: the section head is always the
+   affordance, and its caret turns. (Tapping the selected filter twice
+   still works, but no longer has to be guessed.) */
+.sheet-section-head .section-caret {
+  transition: transform var(--t-base) var(--ease);
+}
+.sheet-section[data-open="true"] .sheet-section-head .section-caret {
+  transform: rotate(180deg);
+}
+
+/* Native dialogs/sheets never leave a dead end: Enter confirms, Escape cancels. */
+
+/* --- Motion preference -------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .erase-sheet,
+  .modal.filter-sheet,
+  .crop-sheet {
+    transition: none !important;
+  }
+}
+
+/* Dock never overflows the phone width: six equal tools + one commit. */
+@media (max-width: 599px) {
+  .editor-dock {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+    align-items: stretch;
+    overflow-x: visible;
+    gap: 0;
+  }
+  body.in-editor .editor-dock,
+  body.in-editor.editing .editor-dock {
+    display: grid;
+  }
+  .editor-dock .dock-spacer,
+  .editor-dock #btn-rotate,
+  .editor-dock #btn-back {
+    display: none;
+  }
+  /* Zoom leaves the dock flow so the dock is always exactly one row. */
+  .editor-dock .dock-zoom {
+    position: fixed;
+    right: 10px;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px) + 8px);
+    bottom: auto;
+    z-index: 96;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 26px #0009;
+    backdrop-filter: blur(10px);
+  }
+  .editor-dock .dock-zoom .dock-btn {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+    border-radius: var(--r-pill);
+  }
+  .dock-btn.dock-primary {
+    grid-row: 1;
+    grid-column: 7;
+  }
+  .dock-btn {
+    min-width: 0;
+    padding: 6px 2px;
+  }
+  .dock-btn span {
+    font-size: var(--fs-label);
+  }
+  .dock-btn.dock-primary {
+    min-width: 84px;
+    padding: 6px 8px;
+    margin-left: 2px;
+  }
+}
+
+/* --- Crop screen on a phone: one stacked, full-width stage --------
+   The old two-column grid pushed the preview off-screen on 390px.
+   Source stays the interactive stage; the live preview sits under it. */
+@media (max-width: 760px) {
+  #crop-view .studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    padding: 8px 12px;
+    justify-items: center;
+  }
+  #crop-view .stage-panel {
+    width: 100%;
+  }
+  #crop-view .stage-panel .canvas-wrapper {
+    max-width: 100%;
+  }
+  #canvas-input,
+  #canvas-preview {
+    max-height: 46dvh;
+    width: auto;
+    max-width: 100%;
+  }
+  #crop-view .panel-label {
+    font-size: var(--fs-label);
+    letter-spacing: 0.4px;
+  }
+}
+
+/* While a sheet is open the dock is hidden, so the floating zoom pill
+   drops into the space the dock would have used. */
+
+
+/* --- Signature panel keeps its scroller; check it explicitly ----- */
+@media (max-width: 599px) {
+  #signature-panel {
+    max-height: min(80dvh, 640px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  #signature-panel .sig-ink-btn {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+}
+
+/* --- Filter tiles: thumbnail + label only, selected = accent ring --- */
+.modal.filter-sheet .filter-item {
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-chip);
+}
+.modal.filter-sheet .filter-item.active {
+  background: none;
+}
+.modal.filter-sheet .filter-preview {
+  width: 100px;
+  height: 124px;
+  border-radius: 9px;
+  border: 2px solid transparent;
+  background: var(--bg-dark);
+  overflow: hidden;
+}
+.modal.filter-sheet .filter-preview canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.modal.filter-sheet .filter-item.active .filter-preview {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.modal.filter-sheet .filter-name {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--text-muted);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modal.filter-sheet .filter-item.active .filter-name {
+  color: var(--accent);
+  font-weight: 750;
+}
+.modal.filter-sheet .filter-status,
+.modal.filter-sheet .filter-description {
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+  padding: 0 14px;
+  margin: 2px 0 6px;
+}
+
+/* --- Erase tools wrap, they never hide in a scroller -------------- */
+@media (max-width: 760px) {
+  .erase-sheet .erase-toolbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+    gap: 8px;
+    overflow: visible;
+    padding-bottom: 8px;
+  }
+  .erase-sheet .erase-tool {
+    min-width: 0;
+    min-height: 56px;
+  }
+}
+
+/* The pinned sheet footer must never clip the last row of content. */
+.erase-sheet .sheet-body {
+  padding-bottom: 58px;
+  scroll-padding-bottom: 58px;
+}
+.erase-sheet.sheet-collapsed .sheet-body {
+  padding-bottom: 0;
+}
+
+/* --- Native-feeling dialog: sheet geometry, 44px actions ---------- */
+@media (max-width: 599px) {
+  .modal:not(.filter-sheet) {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    max-height: 88dvh;
+    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    border-bottom: 0;
+  }
+  .modal:not(.filter-sheet) .modal-content {
+    padding: 20px 16px calc(18px + var(--safe-b));
+  }
+  .modal .modal-close,
+  .modal .modal-confirm {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+  .sig-import-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .sig-import-actions .tool-btn {
+    min-height: 48px;
+  }
+}
+
+/* --- Wide screens: sheets dock as a right-hand inspector --------
+   The centred document keeps its centre line free, so drag targets and
+   the page itself are never covered by a panel. */
+@media (min-width: 900px) {
+  .erase-sheet,
+  .crop-sheet {
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: var(--dock-h, 72px);
+    width: 360px;
+    max-height: none;
+    transform: none;
+    border-radius: 0;
+    border: 0;
+    border-left: 1px solid var(--border);
+    box-shadow: -18px 0 50px #0008;
+    padding: 10px 16px 16px;
+  }
+  .erase-sheet.sheet-collapsed {
+    top: auto;
+    height: 58px;
+    max-height: 58px;
+    transform: none;
+  }
+  .crop-sheet {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .crop-sheet .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .crop-sheet .tool-group {
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .crop-sheet .crop-primary-group {
+    display: block;
+  }
+  .crop-sheet .tool-label {
+    margin-bottom: 8px;
+  }
+  .crop-sheet #btn-crop.tool-btn {
+    width: 100%;
+  }
+  #crop-view .studio-layout {
+    padding-right: 380px;
+  }
+  .modal.filter-sheet {
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: var(--dock-h, 72px);
+    width: 380px;
+    max-height: none;
+    transform: none;
+    border-radius: 0;
+    border: 0;
+    border-left: 1px solid var(--border);
+    box-shadow: -18px 0 50px #0008;
+  }
+  .modal.filter-sheet .filter-grid {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  body.editing #process-view .processed-stage {
+    padding-right: 372px;
+  }
+}
+
+/* The crop sheet is always fully on screen, even on short windows. */
+@media (min-width: 900px) {
+  .crop-sheet {
+    max-height: calc(100dvh - var(--dock-h, 72px) - 16px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* --- Crop magnifier + live corner readout ------------------------- */
+.crop-loupe {
+  position: absolute;
+  z-index: 6;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid #fff;
+  box-shadow: 0 14px 34px #000c;
+  pointer-events: none;
+  background: #0b1220;
+}
+.crop-loupe canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+.crop-size-readout {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, #0b1220 88%, transparent);
+  border: 1px solid var(--border);
+  color: #f8fafc;
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* --- Text sheet controls: real 44px targets ---------------------- */
+#text-panel select,
+#text-panel .text-field select,
+#text-panel .text-controls-row select {
+  min-height: var(--tap-min);
+  font-size: var(--fs-body-s);
+}
+#text-panel .text-field {
+  gap: 6px;
+}
+#text-panel .text-controls-row label > span {
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+#text-panel .text-ink-swatch,
+#text-panel #text-ink-color {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+}
+#text-panel input[type="color"] {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 2px;
+  border-radius: var(--r-chip);
+}
+/* The erase sheet's own undo/redo is the single history row; the pinned
+   footer must not hide the last section, so content scrolls clear of it. */
+.erase-sheet .sheet-body {
+  padding-bottom: 58px;
+}
+
+/* --- Sheet height budget: content first, scrollbar last ---------- */
+@media (max-width: 599px) {
+  .erase-sheet {
+    max-height: min(74dvh, 620px);
+  }
+  #text-panel .sheet-body {
+    padding-bottom: 34px;
+  }
+  #text-panel .erase-footer.sheet-title-row {
+    padding-top: 6px;
+  }
+  #text-panel input[type="range"] {
+    min-height: var(--tap-min);
+  }
+}
+
+/* Desktop: the inspector should not wash the document out. */
+@media (min-width: 900px) {
+  .modal.filter-sheet::backdrop {
+    background: #0004;
+  }
+}
+/* Light theme: keep the dock commit button and sheet chrome contrasty. */
+.light-theme .dock-btn.dock-primary,
+.light-theme .sheet-round.primary {
+  background: var(--primary-dark);
+}
+.light-theme .editor-topbar {
+  background: color-mix(in srgb, #ffffff 94%, transparent);
+}
+.light-theme .crop-size-readout {
+  background: #0b1220e0;
+}

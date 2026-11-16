@@ -1,3 +1,55 @@
+# Test report — Stage 6 (UX refresh)
+
+Run: 16 Nov 2026 · headless Chromium · Playwright
+Command pattern: `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node <suite>`
+
+## Regression suites (all green)
+
+| Suite | Result |
+| --- | --- |
+| `test-stage5.js` | **26 pass / 0 fail** — dock, sheets, collapsible sections, objects, persistence, export |
+| `test-text-sig.js` | **59 pass / 0 fail** — text object lifecycle, signature draw/upload/reuse, crop popup, filters, erase, rotate, export |
+| `test-full.js` | **4 / 4** — drag-drop PDF import, erase + local repair on a PDF page, save + export, free memory then import again |
+| `test-pdf-scanner.js` | **9 / 9** — boot, image pipeline, 1-page and 3-page PDF import, re-crop, compress/share, corrupt PDF, offline reload, mobile viewport |
+
+Stability: `test-text-sig.js` was run three times; one run reported a headless
+"Target crashed" (browser process, not an app error) and passed cleanly when
+re-run alone, which matches the Stage 5 behaviour for back-to-back suites.
+
+## UX audit (`ux-audit.js`, 390×844)
+
+| Check | Before | After |
+| --- | --- | --- |
+| Interactive controls under 44px — Erase sheet | 6 of 16 | **0 of 13** |
+| Interactive controls under 44px — Text sheet | 11 of 14 | **0 of 14** |
+| Interactive controls under 44px — Filters | 3 of 17 | **0 of 16** |
+| Content hidden by scrolling — Text sheet | 437px visible / 516px content (**15%**) | **0%** |
+| Content hidden by scrolling — Erase sheet | 0% but last section clipped by footer | **0%, footer clears content** |
+| Content hidden by scrolling — Filters | 0% | **0%** |
+| Crop corner handle hit area | 26×26 | **44×44** |
+| Crop magnifier | absent | **present** (132px, follows the dragged corner) |
+| Text contrast, dock "Add to Doc" | 4.47:1 (fail) | **passes** (commit button is filled indigo/white text) |
+| Accessible names | 0 unnamed | **0 unnamed** |
+| Visible focus ring | present | **present**, first tab stops now Back → More → dock |
+| 200% text zoom | no clipping, no horizontal scroll | **unchanged, no clipping** |
+| Reduced motion rules | 1 | **2** (sheets and scroll behaviour) |
+
+## Geometry guarantee (unchanged from Stage 5)
+
+Crop / Filters / Erase / Text / Signature all keep the document bounding box
+`{"w":390,"h":520}` before, during and after opening the panel — no editor
+resizes the page.
+
+## Notes
+
+- One assertion was widened: the erase section header copy changed from
+  "Repair & clone" to "Patch area & copy texture", so `test-full.js` now matches
+  `/Repair|Patch/i`. The control exercised is identical.
+- The desktop filter sheet is now an inspector panel; the same dialog and the
+  same confirm/cancel ids are used, so no test path changed.
+
+---
+
 # Stage 5 — full-size editor, tool dock and editable objects — 16 November 2026
 
 Layout and data-model release on top of Stage 4.3. No new dependency; IndexedDB schema extended with an optional per-page `annotations` array (older pages load with an empty list).

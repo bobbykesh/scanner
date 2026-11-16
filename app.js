@@ -196,6 +196,7 @@
       $(view).hidden = view !== id;
     });
     document.body.classList.toggle("in-editor", id === "process-view");
+    if (id === "process-view") syncEditorTitle();
     requestAnimationFrame(refreshDockHeight);
     if (id !== "process-view") hideStatus();
     $("btn-return-gallery").hidden = !documentPages.length;
@@ -204,6 +205,29 @@
         renderStudio();
         updatePreview();
       });
+  }
+  // Top bar title: the document page that is open, never a new data source.
+  function syncEditorTitle() {
+    const name = $("editor-title-name");
+    const sub = $("editor-title-sub");
+    if (!name || !sub) return;
+    const index = documentPages.findIndex((page) => page.id === activePageId);
+    name.textContent =
+      index >= 0 ? `Page ${index + 1}` : documentPages.length ? "New page" : "Document";
+    sub.textContent = documentPages.length
+      ? `${index >= 0 ? index + 1 : documentPages.length} of ${documentPages.length}${
+          dirty ? " · edited" : ""
+        }`
+      : dirty
+        ? "Edited"
+        : "Ready";
+  }
+  function setEditorMenu(open) {
+    const menu = $("editor-more-menu");
+    const trigger = $("btn-editor-more");
+    if (!menu || !trigger) return;
+    menu.hidden = !open;
+    trigger.setAttribute("aria-expanded", String(open));
   }
   function setLoading(message, visible = true) {
     $("loading-text").textContent = message;
@@ -709,6 +733,62 @@
       }
     });
   }
+  // Magnifier: shows the pixels under the corner being dragged, so a 26px
+  // page detail can be aligned even when the finger covers the corner.
+  function paintLoupe(point) {
+    const box = $("crop-loupe");
+    const view = $("crop-loupe-canvas");
+    const readout = $("crop-size-readout");
+    if (!box || !view || !canvas || !point) return;
+    const size = 132;
+    const zoom = 3;
+    view.width = size;
+    view.height = size;
+    const ctx = view.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#0b1220";
+    ctx.fillRect(0, 0, size, size);
+    const half = size / (2 * zoom);
+    try {
+      ctx.drawImage(
+        canvas,
+        point.x - half,
+        point.y - half,
+        half * 2,
+        half * 2,
+        0,
+        0,
+        size,
+        size,
+      );
+    } catch (error) {
+      return;
+    }
+    ctx.strokeStyle = "#22d3ee";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    box.hidden = false;
+    // Keep the loupe on the opposite side of the drag so it is never hidden
+    // under the finger.
+    const wrapper = canvas.getBoundingClientRect();
+    const ratio = view.width ? 1 : 1;
+    const px = ((point.x / canvas.width) * wrapper.width) / ratio;
+    const py = ((point.y / canvas.height) * wrapper.height) / ratio;
+    box.style.left = `${Math.max(4, Math.min(wrapper.width - size - 4, px < wrapper.width / 2 ? wrapper.width - size - 8 : 8))}px`;
+    box.style.top = `${Math.max(4, Math.min(wrapper.height - size - 4, py < wrapper.height / 2 ? wrapper.height - size - 8 : 8))}px`;
+    if (readout) {
+      readout.hidden = false;
+      readout.textContent = `${Math.round(point.x)} × ${Math.round(point.y)} px`;
+    }
+  }
+  function hideLoupe() {
+    const box = $("crop-loupe");
+    const readout = $("crop-size-readout");
+    if (box) box.hidden = true;
+    if (readout) readout.hidden = true;
+  }
   function startDrag(event, index) {
     if (busy || event.button !== 0) return;
     event.preventDefault();
@@ -737,9 +817,12 @@
       renderStudio();
       updatePreview();
       markDirty();
+      paintLoupe(corners[index]);
     };
+    paintLoupe(corners[index]);
     const end = (e) => {
       if (e.pointerId !== event.pointerId) return;
+      hideLoupe();
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", end);
       handle.removeEventListener("pointercancel", end);
@@ -4623,6 +4706,7 @@
     }
   }
   $("btn-save-page").addEventListener("click", async () => {
+    setTimeout(syncEditorTitle, 0);
     if (busy || saving || eraseActive || textActive || signatureActive) return;
     try {
       const existing = documentPages.find((page) => page.id === activePageId);
@@ -4784,6 +4868,35 @@
   $("btn-return-gallery").addEventListener("click", () =>
     showView("gallery-view"),
   );
+  // Overflow menu: Rotate and Back live here on phone widths.
+  $("btn-editor-more")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setEditorMenu($("editor-more-menu").hidden);
+  });
+  $("editor-more-menu")?.addEventListener("click", (event) => {
+    // Menu items forward to the canonical dock buttons, so there is exactly
+    // one handler per action and no duplicated ids.
+    const item = event.target.closest("[data-forward]");
+    if (item) {
+      const target = $(item.dataset.forward);
+      setEditorMenu(false);
+      if (target) target.click();
+      return;
+    }
+    setEditorMenu(false);
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".editor-more-menu, #btn-editor-more"))
+      setEditorMenu(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setEditorMenu(false);
+  });
+  $("btn-editor-back")?.addEventListener("click", () => {
+    if (dirty && !confirm("Leave the editor? Unsaved changes stay on this page only when you tap Add to Doc.")) return;
+    showView(documentPages.length ? "gallery-view" : "upload-area");
+  });
+
   $("btn-back").addEventListener("click", () => {
     if (busy || saving) return;
     if (activePageId !== null) {
