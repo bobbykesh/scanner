@@ -42,21 +42,162 @@
     MAX_PDF_PAGES = 30;
   const VIEW_IDS = ["upload-area", "crop-view", "process-view", "gallery-view"];
 
+  let noticeTimer = null;
   function notice(message, error = false) {
     const box = $("status-message");
     box.textContent = message;
     box.classList.toggle("error", error);
     box.hidden = false;
+    // Confirmations auto-dismiss so they never sit over the document.
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(
+      () => {
+        noticeTimer = null;
+        if (!box.classList.contains("error")) box.hidden = true;
+      },
+      error ? 9000 : 3500,
+    );
   }
   function fail(message, error) {
     console.error(message, error);
     notice(`${message} ${error?.message || String(error || "")}`, true);
+  }
+
+  // ---- Stage 5 sheet + dock controllers -------------------------------
+  function isSheetSectionOpen(section) {
+    return !!section && section.dataset.open === "true";
+  }
+  function setSheetSectionOpen(section, open) {
+    if (!section) return;
+    section.dataset.open = open ? "true" : "false";
+    const head = section.querySelector("[data-section-toggle]");
+    if (head) head.setAttribute("aria-expanded", String(open));
+  }
+  function sheetSections(panel) {
+    return panel ? [...panel.querySelectorAll(".sheet-section")] : [];
+  }
+  function collapseSheetSections(panel) {
+    sheetSections(panel).forEach((section) => setSheetSectionOpen(section, false));
+  }
+  function setSheetCollapsed(panel, collapsed) {
+    if (!panel) return;
+    panel.classList.toggle("sheet-collapsed", collapsed);
+    const grip = panel.querySelector("[data-sheet-toggle]");
+    if (grip) grip.setAttribute("aria-expanded", String(!collapsed));
+  }
+  function isSheetCollapsed(panel) {
+    return !!panel && panel.classList.contains("sheet-collapsed");
+  }
+  function setDockLabel(id, label) {
+    const button = $(id);
+    if (!button) return;
+    const span = button.querySelector("span");
+    if (span) span.textContent = label;
+    else button.textContent = label;
+  }
+  function markDockButtons() {
+    document
+      .querySelectorAll(".editor-dock .dock-btn")
+      .forEach((button) => {
+        if (button.closest(".dock-zoom")) {
+          button.classList.add("dock-zoom-btn");
+          return;
+        }
+        const toolId = button.id;
+        const live =
+          (toolId === "btn-open-erase" && eraseActive) ||
+          (toolId === "btn-open-text" && textActive) ||
+          (toolId === "btn-open-signature" && signatureActive) ||
+          (toolId === "btn-open-filters" && !!filterSession);
+        button.setAttribute("aria-pressed", String(!!live));
+      });
+    const dock = document.querySelector(".editor-dock");
+    if (dock)
+      document.body.style.setProperty(
+        "--dock-h",
+        `${Math.ceil(dock.getBoundingClientRect().height) || 72}px`,
+      );
+  }
+  window.addEventListener("resize", markDockButtons);
+  // The dock is only mounted in the editor view, so its height is measured
+  // whenever the view changes (CSS cannot know it otherwise).
+  function refreshDockHeight() {
+    const dock = document.querySelector(".editor-dock");
+    const height = dock ? Math.ceil(dock.getBoundingClientRect().height) : 0;
+    document.body.style.setProperty("--dock-h", `${height || 72}px`);
+  }
+  function syncZoomDisplay() {
+    const session =
+      (typeof eraseActive !== "undefined" && eraseActive && eraseSession) ||
+      (typeof textActive !== "undefined" && textActive && textSession) ||
+      (typeof signatureActive !== "undefined" && signatureActive && sigSession) ||
+      null;
+    const value = `${Math.round((session?.zoom || 1) * 100)}%`;
+    const output = $("editor-zoom");
+    if (output && output.value !== value) output.value = value;
+    const zoomBox = document.querySelector(".dock-zoom");
+    if (zoomBox) zoomBox.hidden = !session;
+  }
+  document.querySelectorAll("[data-sheet-toggle]").forEach((grip) =>
+    grip.addEventListener("click", () => {
+      const panel = grip.closest(".erase-sheet");
+      setSheetCollapsed(panel, !isSheetCollapsed(panel));
+    }),
+  );
+  document.querySelectorAll("[data-section-toggle]").forEach((head) =>
+    head.addEventListener("click", () => {
+      const section = head.closest(".sheet-section");
+      const panel = head.closest(".erase-sheet");
+      const willOpen = !isSheetSectionOpen(section);
+      // One open section at a time keeps the sheet short over the page.
+      if (willOpen && panel)
+        sheetSections(panel).forEach((other) => {
+          if (other !== section) setSheetSectionOpen(other, false);
+        });
+      setSheetSectionOpen(section, willOpen);
+      if (panel) setSheetCollapsed(panel, false);
+      syncSectionValues();
+    }),
+  );
+  function syncSectionValues() {
+    const brush = $("erase-brush-value");
+    if (brush)
+      brush.textContent = `${$("brush-size").value}px · ${
+        ($("cover-mode").selectedOptions[0]?.textContent || "").split("·")[0].trim()
+      }`;
+    const style = $("text-style-value");
+    if (style)
+      style.textContent = `${$("text-font-size").value}px ${
+        ($("text-font-weight").selectedOptions[0]?.textContent || "").split(" ")[0]
+      }`;
+    const ink = $("sig-ink-value");
+    if (ink) {
+      const active = document.querySelector(".sig-ink-btn.active");
+      ink.textContent = active ? active.textContent.trim() : "Scanned Black";
+    }
+    const adj = $("filter-adjust-value");
+    if (adj && filterSession)
+      adj.textContent = `${filterSession.settings.strength}%`;
+  }
+  ["brush-size", "cover-mode", "text-font-size", "text-font-weight"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("input", syncSectionValues);
+    if (el) el.addEventListener("change", syncSectionValues);
+  });
+  window.addEventListener("resize", syncZoomDisplay);
+
+  function hideStatus() {
+    const box = $("status-message");
+    if (box) box.hidden = true;
   }
   function showView(id) {
     activeView = id;
     VIEW_IDS.forEach((view) => {
       $(view).hidden = view !== id;
     });
+    document.body.classList.toggle("in-editor", id === "process-view");
+    requestAnimationFrame(refreshDockHeight);
+    if (id !== "process-view") hideStatus();
     $("btn-return-gallery").hidden = !documentPages.length;
     if (id === "crop-view")
       requestAnimationFrame(() => {
@@ -279,7 +420,11 @@
       editUndo.final.width = editUndo.final.height = 1;
     }
     editUndo = null;
+    annotationUndo = null;
     $("btn-undo-edit").disabled = true;
+  }
+  function refreshUndoButton() {
+    $("btn-undo-edit").disabled = !editUndo && !annotationUndo;
   }
   function syncFilters(type) {
     document.querySelectorAll(".filter-item[data-filter]").forEach((item) => {
@@ -380,7 +525,7 @@
             clearEditUndo();
             syncFilters(currentFilter);
             markDirty();
-            $("btn-save-page").textContent = "Add to Doc";
+            setDockLabel("btn-save-page", "Add to Doc");
             initStudio();
             notice(
               "PDF page opened at full bounds. Adjust the four corners to crop, or tap Flatten & Process to edit filters, erase or save.",
@@ -465,7 +610,7 @@
       clearEditUndo();
       syncFilters(currentFilter);
       markDirty();
-      $("btn-save-page").textContent = "Add to Doc";
+      setDockLabel("btn-save-page", "Add to Doc");
       initStudio();
       notice(
         scale < 1
@@ -902,7 +1047,8 @@
       valid: true,
       request: 0,
     };
-    document.body.classList.add("filtering");
+    document.body.classList.add("filtering", "editing");
+    markDockButtons();
     updateFilterControls();
     $("filter-confirm").disabled = false;
     $("filter-status").textContent =
@@ -924,6 +1070,17 @@
   document.querySelectorAll(".filter-item[data-filter]").forEach((item) =>
     item.addEventListener("click", () => {
       if (!filterSession || busy) return;
+      // Tapping the already-selected filter opens its settings, so the panel
+      // can stay collapsed the rest of the time and the page stays full size.
+      if (item.dataset.filter === filterSession.selected) {
+        setSheetSectionOpen(
+          $("filter-adjustments"),
+          !isSheetSectionOpen($("filter-adjustments")),
+        );
+        if (isSheetSectionOpen($("filter-adjustments")))
+          $("filter-adjust-value").textContent = "";
+        return;
+      }
       filterSession.presetSettings[filterSession.selected] = {
         ...filterSession.settings,
       };
@@ -1005,7 +1162,8 @@
     FilterProcessor.cancel("preview");
     FilterProcessor.cancel("thumbs");
     filterSession = null;
-    document.body.classList.remove("filtering");
+    document.body.classList.remove("filtering", "editing");
+    markDockButtons();
     $("filter-modal").close();
   }
   function cancelFilters() {
@@ -1120,12 +1278,24 @@
       rememberEdit();
       copy(base, bufferCanvas);
       copy(result, finalCanvas);
+      rotateAnnotations(base.width, base.height);
       markDirty();
+      requestOverlayRender();
     });
   });
   $("btn-undo-edit").addEventListener("click", () => {
-    if (!editUndo || busy || eraseActive || textActive || signatureActive)
+    if (busy || eraseActive || textActive || signatureActive) return;
+    if (!editUndo && annotationUndo) {
+      restoreAnnotations(annotationUndo);
+      annotationUndo = null;
+      clearAnnotationSelection();
+      syncAnnotationBadge();
+      markDirty();
+      notice("Reverted the last text or signature change.");
+      refreshUndoButton();
       return;
+    }
+    if (!editUndo) return;
     copy(editUndo.base, bufferCanvas);
     copy(editUndo.final, finalCanvas);
     currentFilter = editUndo.filter;
@@ -1163,8 +1333,9 @@
       busy;
     $("btn-clear-mask").disabled = !count || !!drawing || busy;
     $("btn-apply-erase").disabled = !count || !!drawing || busy;
-    $("btn-zoom-out").disabled = eraseSession.zoom <= 1 || !!drawing || busy;
-    $("btn-zoom-in").disabled = eraseSession.zoom >= 4 || !!drawing || busy;
+    $("btn-editor-zoom-out").disabled = eraseSession.zoom <= 1 || !!drawing || busy;
+    $("btn-editor-zoom-in").disabled = eraseSession.zoom >= 4 || !!drawing || busy;
+    syncZoomDisplay();
   }
   function pushEraseState(commands) {
     if (!eraseSession) return;
@@ -1301,7 +1472,7 @@
       session.panY = Math.max(-maxY, Math.min(maxY, session.panY));
     }
     surface.style.transform = `translate(${session.panX}px, ${session.panY}px) scale(${session.zoom})`;
-    $("erase-zoom").value = `${Math.round(session.zoom * 100)}%`;
+    syncZoomDisplay();
     editorActions();
   }
   function positionEraseEditor() {
@@ -1405,7 +1576,9 @@
           editorStage.releasePointerCapture(id);
     }
     eraseSession = null;
-    document.body.classList.remove("erasing");
+    document.body.classList.remove("erasing", "editing");
+    markDockButtons();
+    syncZoomDisplay();
     editorStage.classList.remove("pan-mode");
     $("erase-panel").hidden = true;
     $("pen-settings").hidden = true;
@@ -1413,8 +1586,11 @@
       .querySelector('[data-tool="pen"]')
       .setAttribute("aria-expanded", "false");
     surface.style.transform = "";
-    maskCanvas.width = maskCanvas.height = 1;
+    // Keep the overlay canvas alive: it also renders placed text/signatures.
+    const eraseCtx = maskCanvas.getContext("2d");
+    eraseCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
     selection.width = selection.height = 1;
+    requestOverlayRender();
   }
   $("btn-open-erase").addEventListener("click", () => {
     if (
@@ -1447,7 +1623,11 @@
     eraseActive = true;
     drawing = null;
     $("erase-panel").hidden = false;
-    document.body.classList.add("erasing");
+    document.body.classList.add("erasing", "editing");
+    markDockButtons();
+    collapseSheetSections($("erase-panel"));
+    setSheetCollapsed($("erase-panel"), false);
+    syncSectionValues();
     document.querySelector('[data-tool="repair"]').disabled =
       !VisionEngine.canInpaint();
     $("clone-source-status").textContent = "Clone source not set";
@@ -1537,16 +1717,38 @@
     eraseSession.zoom = Math.max(1, Math.min(4, value));
     updateEditorTransform();
   }
-  $("btn-zoom-in").addEventListener("click", () =>
-    zoomEditor((eraseSession?.zoom || 1) + 0.25),
-  );
-  $("btn-zoom-out").addEventListener("click", () =>
-    zoomEditor((eraseSession?.zoom || 1) - 0.25),
-  );
-  $("btn-zoom-fit").addEventListener("click", () => {
-    if (!eraseSession || busy || drawing) return;
-    eraseSession.panX = eraseSession.panY = 0;
-    zoomEditor(1);
+  // Zoom lives in the dock and drives whichever editor is open.
+  function activeZoomSession() {
+    if (eraseActive) return eraseSession;
+    if (textActive) return textSession;
+    if (signatureActive) return sigSession;
+    return null;
+  }
+  function setActiveZoom(value) {
+    const session = activeZoomSession();
+    if (!session || busy) return;
+    if (eraseActive) {
+      zoomEditor(value);
+      return;
+    }
+    session.zoom = clampNum(value, 1, 4);
+    if (eraseActive) updateEditorTransform();
+    else if (textActive) updateTextTransform();
+    else if (signatureActive) updateSigTransform();
+  }
+  $("btn-editor-zoom-in").addEventListener("click", () => {
+    const session = activeZoomSession();
+    if (session) setActiveZoom((session.zoom || 1) + 0.25);
+  });
+  $("btn-editor-zoom-out").addEventListener("click", () => {
+    const session = activeZoomSession();
+    if (session) setActiveZoom((session.zoom || 1) - 0.25);
+  });
+  $("btn-editor-zoom-fit").addEventListener("click", () => {
+    const session = activeZoomSession();
+    if (!session) return;
+    session.panX = session.panY = 0;
+    setActiveZoom(1);
   });
   editorStage.addEventListener(
     "wheel",
@@ -2071,6 +2273,16 @@
   function textFontString(size, weight, familyKey) {
     return `${weight} ${size}px ${TEXT_FONT_STACKS[familyKey] || TEXT_FONT_STACKS.sans}`;
   }
+  function applyTextSettingsToControls(settings) {
+    if (!settings) return;
+    $("text-content-input").value = settings.text || "";
+    setTextControls(settings);
+    $("text-auto-fit").checked = settings.autoFit !== false;
+    $("text-cover-bg").checked = !!settings.coverBg;
+    $("text-scan-softness").value = String(settings.softness ?? 30);
+    $("text-letter-spacing").value = String(settings.letterSpacing ?? 0);
+    syncTextApplyButton();
+  }
   function getTextSettings() {
     return {
       text: $("text-content-input").value,
@@ -2094,6 +2306,7 @@
       $("text-font-size-value").textContent = `${$("text-font-size").value}px`;
     }
     if (style.inkColor) $("text-ink-color").value = style.inkColor;
+    if (Number.isFinite(style.softness) || Number.isFinite(style.letterSpacing)) return;
     if (Number.isFinite(style.letterSpacing))
       $("text-letter-spacing").value = String(clampNum(style.letterSpacing, -20, 60));
   }
@@ -2335,7 +2548,7 @@
       session.panY = clampNum(session.panY, -maxY, maxY);
     }
     surface.style.transform = `translate(${session.panX}px, ${session.panY}px) scale(${session.zoom})`;
-    $("text-zoom").value = `${Math.round(session.zoom * 100)}%`;
+    syncZoomDisplay();
   }
   function positionTextEditor() {
     if (!textActive) return;
@@ -2487,6 +2700,7 @@
     if (fitted && fitted !== settings.size) {
       $("text-font-size").value = String(fitted);
       $("text-font-size-value").textContent = `${fitted}px`;
+      syncSectionValues();
     }
   }
   function sizeBoxToText() {
@@ -2567,7 +2781,13 @@
     textActive = true;
     drawing = null;
     $("text-panel").hidden = false;
-    document.body.classList.add("text-editing");
+    document.body.classList.add("text-editing", "editing");
+    markDockButtons();
+    collapseSheetSections($("text-panel"));
+    setSheetSectionOpen($("text-panel").querySelector(".sheet-section"), true);
+    setSheetCollapsed($("text-panel"), false);
+    syncSectionValues();
+    syncZoomDisplay();
     $("btn-sample-text-style").setAttribute("aria-pressed", "false");
     $("btn-draw-text-box").setAttribute("aria-pressed", "false");
     $("btn-preview-text-clean").setAttribute("aria-pressed", "false");
@@ -2587,41 +2807,43 @@
     textSession = null;
     if (textFrame !== null) cancelAnimationFrame(textFrame);
     textFrame = null;
-    document.body.classList.remove("text-editing", "sampling-mode");
+    document.body.classList.remove("text-editing", "sampling-mode", "editing");
+    markDockButtons();
+    syncZoomDisplay();
     $("text-panel").hidden = true;
     surface.style.transform = "";
-    maskCanvas.width = maskCanvas.height = 1;
+    // The overlay now carries placed objects, so it must not be shrunk here.
+    const ctx = maskCanvas.getContext("2d");
+    ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    requestOverlayRender();
   }
   function applyText() {
     if (!textActive || !textSession || busy) return;
     const settings = getTextSettings();
     if (!String(settings.text || "").trim()) return;
     const box = { ...textSession.box };
-    const paper = textSession.paper;
-    rememberEdit();
-    const ctx = finalCanvas.getContext("2d");
-    if (settings.coverBg) {
-      const bounds = { x0: box.x, y0: box.y, x1: box.x + box.w, y1: box.y + box.h };
-      const field = paper.field(bounds);
-      const pattern = ctx.createPattern(field.tile, "no-repeat");
-      pattern.setTransform(
-        new DOMMatrix()
-          .translate(field.x - field.width / 24, field.y - field.height / 24)
-          .scale(field.width / 24, field.height / 24),
-      );
-      ctx.save();
-      ctx.fillStyle = pattern;
-      ctx.fillRect(box.x, box.y, box.w, box.h);
-      ctx.restore();
-      field.tile.width = field.tile.height = 1;
+    const editingId = textSession.annotationId;
+    if (editingId) {
+      // Editing an existing object keeps its identity and position history.
+      const annotation = pageAnnotations.find((a) => a.id === editingId);
+      if (annotation) {
+        pushAnnotationUndo();
+        annotation.box = box;
+        annotation.settings = { ...settings };
+      }
+    } else {
+      pushAnnotationUndo();
+      pageAnnotations.push({
+        id: nextAnnotationId(),
+        type: "text",
+        box,
+        settings: { ...settings },
+      });
     }
-    drawTextInto(ctx, settings, box, true);
-    copy(finalCanvas, bufferCanvas);
-    currentFilter = "original";
-    currentFilterSettings = FilterProcessor.defaults("original");
-    syncFilters(currentFilter);
     markDirty();
     closeText();
+    requestOverlayRender();
+    notice("Text added. Tap it on the page to move, resize or edit it again.");
   }
   $("btn-open-text").addEventListener("click", openText);
   $("btn-cancel-text").addEventListener("click", closeText);
@@ -2663,13 +2885,6 @@
     textSession.zoom = clampNum(value, 1, 4);
     updateTextTransform();
   }
-  $("btn-text-zoom-in").addEventListener("click", () => zoomText((textSession?.zoom || 1) + 0.25));
-  $("btn-text-zoom-out").addEventListener("click", () => zoomText((textSession?.zoom || 1) - 0.25));
-  $("btn-text-zoom-fit").addEventListener("click", () => {
-    if (!textSession || busy) return;
-    textSession.panX = textSession.panY = 0;
-    zoomText(1);
-  });
   $("text-content-input").addEventListener("input", () => {
     syncTextApplyButton();
     autoFitTextBox();
@@ -2689,6 +2904,7 @@
   );
   $("text-font-size").addEventListener("input", () => {
     $("text-font-size-value").textContent = `${$("text-font-size").value}px`;
+    syncSectionValues();
     requestTextRender();
   });
   $("text-auto-fit").addEventListener("change", () => {
@@ -2931,7 +3147,7 @@
       session.panY = clampNum(session.panY, -maxY, maxY);
     }
     surface.style.transform = `translate(${session.panX}px, ${session.panY}px) scale(${session.zoom})`;
-    $("sig-zoom").value = `${Math.round(session.zoom * 100)}%`;
+    syncZoomDisplay();
   }
   function positionSigEditor() {
     if (!signatureActive || $("signature-panel").hidden) return;
@@ -3046,7 +3262,13 @@
       ? "Reusing your saved signature. Drag to position, drag a corner to resize — or use “Draw / Scan / Upload” for a new one."
       : "Drag the signature to position it or drag a corner handle to resize. Blended into paper texture so it looks signed before scanning.";
     $("signature-panel").hidden = false;
-    document.body.classList.add("sig-editing");
+    document.body.classList.add("sig-editing", "editing");
+    markDockButtons();
+    collapseSheetSections($("signature-panel"));
+    setSheetSectionOpen($("signature-panel").querySelector(".sheet-section"), true);
+    setSheetCollapsed($("signature-panel"), false);
+    syncSectionValues();
+    syncZoomDisplay();
     requestAnimationFrame(() => {
       positionSigEditor();
       renderSigPreview();
@@ -3058,10 +3280,14 @@
     sigSession = null;
     if (sigFrame !== null) cancelAnimationFrame(sigFrame);
     sigFrame = null;
-    document.body.classList.remove("sig-editing");
+    document.body.classList.remove("sig-editing", "editing");
+    markDockButtons();
+    syncZoomDisplay();
     $("signature-panel").hidden = true;
     surface.style.transform = "";
-    maskCanvas.width = maskCanvas.height = 1;
+    const sigCtx = maskCanvas.getContext("2d");
+    sigCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    requestOverlayRender();
     for (const dialog of [$("signature-source-modal"), $("signature-crop-modal")])
       if (dialog.open) dialog.close();
   }
@@ -3069,21 +3295,41 @@
     if (!signatureActive || !sigSession || busy) return;
     const session = sigSession;
     const box = { ...session.box };
-    rememberEdit();
-    const ctx = finalCanvas.getContext("2d");
-    drawSignatureInto(ctx, session, box, true);
-    copy(finalCanvas, bufferCanvas);
+    const editingId = session.annotationId;
     savedSignature = {
       canvas: clone(session.image),
       ink: session.ink,
       darkness: session.darkness,
       rotate: session.rotate,
     };
-    currentFilter = "original";
-    currentFilterSettings = FilterProcessor.defaults("original");
-    syncFilters(currentFilter);
+    pushAnnotationUndo();
+    if (editingId) {
+      const annotation = pageAnnotations.find((a) => a.id === editingId);
+      if (annotation) {
+        annotation.box = box;
+        annotation.ink = session.ink;
+        annotation.darkness = session.darkness;
+        annotation.rotate = session.rotate;
+        annotation.image = session.image.toDataURL("image/png");
+        annotation._image = session.image;
+        annotation._tintedCache = null;
+      }
+    } else {
+      pageAnnotations.push({
+        id: nextAnnotationId(),
+        type: "signature",
+        box,
+        ink: session.ink,
+        darkness: session.darkness,
+        rotate: session.rotate,
+        image: session.image.toDataURL("image/png"),
+        _image: session.image,
+      });
+    }
     markDirty();
     closeSig();
+    requestOverlayRender();
+    notice("Signature placed. Tap it on the page to move or resize it any time.");
   }
   function openSignature() {
     if (
@@ -3126,13 +3372,6 @@
     sigSession.zoom = clampNum(value, 1, 4);
     updateSigTransform();
   }
-  $("btn-sig-zoom-in").addEventListener("click", () => zoomSig((sigSession?.zoom || 1) + 0.25));
-  $("btn-sig-zoom-out").addEventListener("click", () => zoomSig((sigSession?.zoom || 1) - 0.25));
-  $("btn-sig-zoom-fit").addEventListener("click", () => {
-    if (!sigSession || busy) return;
-    sigSession.panX = sigSession.panY = 0;
-    zoomSig(1);
-  });
   document.querySelectorAll(".sig-ink-btn").forEach((button) => {
     button.addEventListener("click", () => {
       if (!sigSession || busy) return;
@@ -3731,6 +3970,544 @@
     }
   });
 
+
+  // ---- Stage 5 annotation layer ---------------------------------------
+  // Placed text and signatures are stored as editable objects on the page
+  // rather than burned into pixels, so they can be selected, moved, resized,
+  // re-styled and deleted at any time. They are only rasterised for export.
+  let pageAnnotations = [];
+  function nextAnnotationId() {
+    return crypto.randomUUID
+      ? crypto.randomUUID()
+      : `ann-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  }
+  function annotationSignatureSession(annotation) {
+    let image = annotation._image;
+    if (!image) {
+      image = document.createElement("canvas");
+      image.width = image.height = 1;
+      if (annotation.image) {
+        const img = new Image();
+        img.src = annotation.image;
+        annotation._pendingImage = img;
+      }
+    }
+    return {
+      image,
+      ink: annotation.ink || "black",
+      darkness: annotation.darkness ?? 88,
+      rotate: annotation.rotate || 0,
+      tintedCache: annotation._tintedCache || (annotation._tintedCache = {}),
+    };
+  }
+  function drawAnnotation(ctx, annotation, forFinal) {
+    if (!annotation) return;
+    if (annotation.type === "text") {
+      drawTextInto(ctx, annotation.settings, annotation.box, forFinal);
+    } else if (annotation.type === "signature") {
+      const session = annotationSignatureSession(annotation);
+      if (session.image.width < 2) return;
+      drawSignatureInto(ctx, session, annotation.box, forFinal);
+    }
+  }
+  function serializeAnnotations() {
+    return pageAnnotations.map((annotation) => {
+      if (annotation.type === "signature")
+        return {
+          id: annotation.id,
+          type: "signature",
+          box: { ...annotation.box },
+          ink: annotation.ink,
+          darkness: annotation.darkness,
+          rotate: annotation.rotate,
+          image: annotation.image || (annotation._image ? annotation._image.toDataURL("image/png") : ""),
+        };
+      return {
+        id: annotation.id,
+        type: "text",
+        box: { ...annotation.box },
+        settings: { ...annotation.settings },
+      };
+    });
+  }
+  function loadAnnotations(saved) {
+    pageAnnotations = (Array.isArray(saved) ? saved : [])
+      .filter((a) => a && (a.type === "text" || a.type === "signature") && a.box)
+      .map((a) => ({
+        ...a,
+        box: { ...a.box },
+        settings: a.settings ? { ...a.settings } : undefined,
+      }));
+    for (const annotation of pageAnnotations) {
+      if (annotation.type === "signature" && annotation.image) {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext("2d").drawImage(img, 0, 0);
+          annotation._image = canvas;
+          annotation._tintedCache = null;
+          requestOverlayRender();
+        };
+        img.src = annotation.image;
+      }
+    }
+  }
+  function annotationsForRender() {
+    return pageAnnotations.filter((a) => a.id !== textSession?.annotationId && a.id !== sigSession?.annotationId);
+  }
+  let overlayFrame = null;
+  function requestOverlayRender() {
+    if (overlayFrame !== null) return;
+    overlayFrame = requestAnimationFrame(() => {
+      overlayFrame = null;
+      renderOverlay();
+    });
+  }
+  function renderOverlay() {
+    if (!maskCanvas.width || !maskCanvas.height) return;
+    const ctx = maskCanvas.getContext("2d");
+    ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    for (const annotation of annotationsForRender()) drawAnnotation(ctx, annotation, false);
+    if (textActive && textSession) renderTextPreview();
+    else if (signatureActive && sigSession) renderSigPreview();
+    else {
+      const selected = selectedAnnotation();
+      if (selected) drawTextBoxChrome(ctx, selected.box);
+    }
+  }
+  function annotationAt(point) {
+    for (let i = pageAnnotations.length - 1; i >= 0; i--) {
+      const box = pageAnnotations[i].box;
+      if (
+        point.x >= box.x &&
+        point.x <= box.x + box.w &&
+        point.y >= box.y &&
+        point.y <= box.y + box.h
+      )
+        return pageAnnotations[i];
+    }
+    return null;
+  }
+  function annotationsCanvas(width, height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  }
+  // Compose a stored page image with its annotations and return a data URL.
+  // This is the only place annotations become pixels (export / share / thumbnails
+  // that must show the final look).
+  async function composePageDataUrl(pageLike, mime = "image/png", quality) {
+    const saved = pageLike.annotations || [];
+    if (!saved.length) return pageLike.final;
+    const base = await loadImage(pageLike.final);
+    const out = annotationsCanvas(base.naturalWidth, base.naturalHeight);
+    const ctx = out.getContext("2d");
+    ctx.drawImage(base, 0, 0);
+    for (const raw of saved) {
+      const annotation = {
+        ...raw,
+        box: { ...raw.box },
+        settings: raw.settings ? { ...raw.settings } : undefined,
+      };
+      if (annotation.type === "signature" && annotation.image) {
+        const img = await loadImage(annotation.image);
+        const canvas = annotationsCanvas(img.naturalWidth, img.naturalHeight);
+        canvas.getContext("2d").drawImage(img, 0, 0);
+        annotation._image = canvas;
+      }
+      drawAnnotation(ctx, annotation, true);
+    }
+    return out.toDataURL(mime, quality);
+  }
+  // Warm the annotation images for an editing session (async decode once).
+  async function prepareAnnotationsForEditing(saved) {
+    loadAnnotations(saved);
+    await Promise.all(
+      pageAnnotations
+        .filter((a) => a.type === "signature" && a._pendingImage)
+        .map(
+          (a) =>
+            new Promise((resolve) => {
+              const img = a._pendingImage;
+              const done = () => {
+                const canvas = annotationsCanvas(
+                  Math.max(1, img.naturalWidth),
+                  Math.max(1, img.naturalHeight),
+                );
+                canvas.getContext("2d").drawImage(img, 0, 0);
+                a._image = canvas;
+                a._tintedCache = null;
+                resolve();
+              };
+              if (img.complete && img.naturalWidth) done();
+              else {
+                img.onload = done;
+                img.onerror = resolve;
+              }
+            }),
+        ),
+    );
+    requestOverlayRender();
+  }
+
+
+  // ---- Annotation editing (tap a placed object to change it) ----------
+  let annotationUndo = null;
+  let annotationSelection = null; // { id, mode, corner, start, orig }
+  let lastAnnotationTap = null;
+  function snapshotAnnotations() {
+    return JSON.parse(JSON.stringify(serializeAnnotations()));
+  }
+  function pushAnnotationUndo() {
+    annotationUndo = snapshotAnnotations();
+    refreshUndoButton();
+  }
+  function restoreAnnotations(snapshot) {
+    loadAnnotations(snapshot);
+    for (const annotation of pageAnnotations) {
+      if (annotation.type === "signature" && annotation.image) {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = annotationsCanvas(img.naturalWidth, img.naturalHeight);
+          canvas.getContext("2d").drawImage(img, 0, 0);
+          annotation._image = canvas;
+          annotation._tintedCache = null;
+          requestOverlayRender();
+        };
+        img.src = annotation.image;
+      }
+    }
+    requestOverlayRender();
+  }
+  function clearAnnotationSelection() {
+    annotationSelection = null;
+    requestOverlayRender();
+  }
+  function selectedAnnotation() {
+    if (!annotationSelection) return null;
+    return pageAnnotations.find((a) => a.id === annotationSelection.id) || null;
+  }
+  function editAnnotation(annotation) {
+    if (!annotation || busy) return;
+    if (annotation.type === "text") {
+      if (textActive || signatureActive || eraseActive || filterSession) return;
+      maskCanvas.width = finalCanvas.width;
+      maskCanvas.height = finalCanvas.height;
+      textSession = {
+        box: { ...annotation.box },
+        paper: PaperMatch.create(finalCanvas),
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        pointers: new Map(),
+        gesture: null,
+        drag: null,
+        sampling: false,
+        targetMode: false,
+        sampleRect: null,
+        targetRect: null,
+        hideBox: false,
+        annotationId: annotation.id,
+      };
+      textActive = true;
+      drawing = null;
+      applyTextSettingsToControls(annotation.settings);
+      $("text-panel").hidden = false;
+      document.body.classList.add("text-editing", "editing");
+      markDockButtons();
+      collapseSheetSections($("text-panel"));
+      setSheetSectionOpen($("text-panel").querySelector(".sheet-section"), true);
+      setSheetCollapsed($("text-panel"), false);
+      syncSectionValues();
+      syncZoomDisplay();
+      $("text-match-badge").textContent = "Editing placed text";
+      $("text-hint").textContent =
+        "Editing a placed text object. Move or resize the box, change the wording, then Apply Text.";
+      requestAnimationFrame(() => {
+        positionTextEditor();
+        renderTextPreview();
+      });
+      return;
+    }
+    // signature
+    if (signatureActive || textActive || eraseActive || filterSession) return;
+    maskCanvas.width = finalCanvas.width;
+    maskCanvas.height = finalCanvas.height;
+    signatureActive = true;
+    const session = annotationSignatureSession(annotation);
+    sigSession = {
+      image: session.image,
+      ink: session.ink,
+      darkness: session.darkness,
+      rotate: session.rotate,
+      baseW: annotation.box.w,
+      baseH: annotation.box.h,
+      box: { ...annotation.box },
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      pointers: new Map(),
+      gesture: null,
+      drag: null,
+      hideBox: false,
+      tintedCache: {},
+      annotationId: annotation.id,
+    };
+    $("sig-scale-slider").value = "100";
+    $("sig-darkness-slider").value = String(sigSession.darkness);
+    $("sig-rotate-slider").value = String(sigSession.rotate);
+    syncSigInkButtons();
+    $("btn-preview-sig-clean").setAttribute("aria-pressed", "false");
+    $("btn-preview-sig-clean").textContent = "Hide box";
+    $("sig-hint").textContent =
+      "Editing a placed signature. Drag to move, corner-drag to resize, or replace it from Draw / Scan / Upload.";
+    $("signature-panel").hidden = false;
+    document.body.classList.add("sig-editing", "editing");
+    markDockButtons();
+    collapseSheetSections($("signature-panel"));
+    setSheetSectionOpen($("signature-panel").querySelector(".sheet-section"), true);
+    setSheetCollapsed($("signature-panel"), false);
+    syncSectionValues();
+    syncZoomDisplay();
+    requestAnimationFrame(() => {
+      positionSigEditor();
+      renderSigPreview();
+    });
+  }
+  function deleteSelectedAnnotation() {
+    const annotation = selectedAnnotation();
+    if (!annotation) return;
+    pushAnnotationUndo();
+    pageAnnotations = pageAnnotations.filter((a) => a.id !== annotation.id);
+    clearAnnotationSelection();
+    markDirty();
+    requestOverlayRender();
+    notice("Deleted. Undo edit restores it.");
+  }
+  function annotationHandlesAt(point) {
+    const annotation = selectedAnnotation();
+    if (!annotation) return null;
+    return textCornerAt(point, annotation.box);
+  }
+  function annotationBadge() {
+    return $("annotation-badge");
+  }
+  function syncAnnotationBadge() {
+    const badge = annotationBadge();
+    if (!badge) return;
+    const annotation = selectedAnnotation();
+    badge.hidden = !annotation;
+    if (annotation) {
+      badge.querySelector("[data-annotation-type]").textContent =
+        annotation.type === "text" ? "Text" : "Signature";
+    }
+  }
+
+
+  // Keep placed objects attached to their content when the page rotates.
+  function rotateAnnotations(width, height) {
+    if (!pageAnnotations.length) return;
+    const rotated = [];
+    for (const annotation of pageAnnotations) {
+      const box = annotation.box;
+      rotated.push({
+        ...annotation,
+        box: {
+          x: Math.max(0, Math.round(height - (box.y + box.h))),
+          y: Math.max(0, Math.round(box.x)),
+          w: Math.min(Math.round(box.h), width),
+          h: Math.min(Math.round(box.w), height),
+        },
+      });
+    }
+    pageAnnotations = rotated;
+    if (maskCanvas.width !== width || maskCanvas.height !== height) {
+      maskCanvas.width = width;
+      maskCanvas.height = height;
+    }
+    clearAnnotationSelection();
+    syncAnnotationBadge();
+  }
+
+  // ---- Tap-to-edit interaction on the document -----------------------
+  // Runs only when no tool editor is open, so it never competes with the
+  // erase/text/signature drawing handlers.
+  function annotationIdle() {
+    return (
+      !eraseActive &&
+      !textActive &&
+      !signatureActive &&
+      !filterSession &&
+      !busy &&
+      !saving &&
+      !document.body.classList.contains("erasing")
+    );
+  }
+  editorStage.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!annotationIdle() || event.button !== 0) return;
+      const point = maskPoint(event);
+      const selected = selectedAnnotation();
+      const handle = selected ? annotationHandlesAt(point) : null;
+      if (handle) {
+        event.preventDefault();
+        event.stopPropagation();
+        editorStage.setPointerCapture(event.pointerId);
+        annotationSelection = {
+          id: selected.id,
+          mode: "resize",
+          corner: handle,
+          start: point,
+          orig: { ...selected.box },
+          pointerId: event.pointerId,
+        };
+        requestOverlayRender();
+        return;
+      }
+      const hit = annotationAt(point);
+      const isDouble =
+        hit &&
+        lastAnnotationTap &&
+        lastAnnotationTap.id === hit.id &&
+        Date.now() - lastAnnotationTap.at < 350;
+      if (!hit) {
+        if (selected) {
+          clearAnnotationSelection();
+          syncAnnotationBadge();
+        }
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (isDouble) {
+        lastAnnotationTap = null;
+        editAnnotation(hit);
+        return;
+      }
+      lastAnnotationTap = { id: hit.id, at: Date.now() };
+      annotationSelection = {
+        id: hit.id,
+        mode: "move",
+        start: point,
+        orig: { ...hit.box },
+        pointerId: event.pointerId,
+        moved: false,
+      };
+      editorStage.setPointerCapture(event.pointerId);
+      requestOverlayRender();
+      syncAnnotationBadge();
+    },
+    { capture: true },
+  );
+  editorStage.addEventListener(
+    "pointermove",
+    (event) => {
+      const selection = annotationSelection;
+      if (!selection || !selection.mode || selection.pointerId !== event.pointerId) return;
+      const annotation = selectedAnnotation();
+      if (!annotation) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const point = maskPoint(event);
+      const box = annotation.box;
+      if (selection.mode === "move") {
+        const dx = point.x - selection.start.x;
+        const dy = point.y - selection.start.y;
+        if (Math.abs(dx) + Math.abs(dy) > 2) selection.moved = true;
+        box.x = clampNum(selection.orig.x + dx, 0, Math.max(0, maskCanvas.width - box.w));
+        box.y = clampNum(selection.orig.y + dy, 0, Math.max(0, maskCanvas.height - box.h));
+      } else {
+        const orig = selection.orig;
+        let nx = orig.x,
+          ny = orig.y,
+          nw = orig.w,
+          nh = orig.h;
+        if (selection.corner === "br") {
+          nw = point.x - orig.x;
+          nh = point.y - orig.y;
+        } else if (selection.corner === "tr") {
+          nw = point.x - orig.x;
+          nh = orig.y + orig.h - point.y;
+          ny = point.y;
+        } else if (selection.corner === "bl") {
+          nw = orig.x + orig.w - point.x;
+          nh = point.y - orig.y;
+          nx = point.x;
+        } else {
+          nw = orig.x + orig.w - point.x;
+          nh = orig.y + orig.h - point.y;
+          nx = point.x;
+          ny = point.y;
+        }
+        nw = Math.max(24, nw);
+        nh = Math.max(16, nh);
+        if (selection.corner === "tl" || selection.corner === "bl") nx = orig.x + orig.w - nw;
+        if (selection.corner === "tl" || selection.corner === "tr") ny = orig.y + orig.h - nh;
+        box.x = clampNum(nx, 0, Math.max(0, maskCanvas.width - nw));
+        box.y = clampNum(ny, 0, Math.max(0, maskCanvas.height - nh));
+        box.w = nw;
+        box.h = nh;
+        annotation._refit = true;
+      }
+      requestOverlayRender();
+    },
+    { capture: true },
+  );
+  function endAnnotationDrag(event) {
+    const selection = annotationSelection;
+    if (!selection || !selection.mode || selection.pointerId !== event.pointerId) return;
+    const annotation = selectedAnnotation();
+    const moved = selection.mode === "resize" || selection.moved;
+    selection.mode = null;
+    if (editorStage.hasPointerCapture(event.pointerId))
+      editorStage.releasePointerCapture(event.pointerId);
+    if (moved && annotation) {
+      // Undo restores the previous geometry; the object stays selected.
+      annotationUndo = annotationUndo || null;
+      markDirty();
+      rememberAnnotationGeometry(annotation, selection.orig);
+      if (annotation.type === "text" && annotation.settings?.autoFit)
+        autoFitAnnotationText(annotation);
+    }
+    requestOverlayRender();
+    syncAnnotationBadge();
+  }
+  ["pointerup", "pointercancel", "lostpointercapture"].forEach((type) =>
+    editorStage.addEventListener(type, endAnnotationDrag, { capture: true }),
+  );
+  function autoFitAnnotationText(annotation) {
+    const fitted = fitTextFontSize(
+      annotation.settings.text,
+      annotation.box,
+      annotation.settings.weight,
+      annotation.settings.family,
+      annotation.settings.letterSpacing,
+    );
+    if (fitted) annotation.settings = { ...annotation.settings, size: fitted };
+  }
+  function rememberAnnotationGeometry(annotation, previousBox) {
+    annotationUndo = annotationUndo || snapshotAnnotations();
+    refreshUndoButton();
+    if (!annotationUndo.length) return;
+    const entry = annotationUndo.find((a) => a.id === annotation.id);
+    if (entry) entry.box = { ...previousBox };
+  }
+
+
+  $("btn-annotation-edit").addEventListener("click", () => {
+    const annotation = selectedAnnotation();
+    if (annotation) editAnnotation(annotation);
+  });
+  $("btn-annotation-delete").addEventListener("click", deleteSelectedAnnotation);
+  $("btn-annotation-deselect").addEventListener("click", () => {
+    clearAnnotationSelection();
+    syncAnnotationBadge();
+  });
+
   // IndexedDB writes are only considered saved when the transaction completes.
   const DB_NAME = "ProScanDB",
     STORE_NAME = "pages";
@@ -3866,6 +4643,7 @@
         cropped: bufferCanvas.toDataURL("image/png"),
         filter: currentFilter,
         final: finalCanvas.toDataURL("image/png"),
+        annotations: serializeAnnotations(),
       };
       if (existing) documentPages[documentPages.indexOf(existing)] = page;
       else documentPages.push(page);
@@ -3893,6 +4671,12 @@
       const image = document.createElement("img");
       image.src = page.final;
       image.alt = `Page ${index + 1}`;
+      if (page.annotations?.length)
+        composePageDataUrl(page, "image/jpeg", 0.85)
+          .then((url) => {
+            image.src = url;
+          })
+          .catch(() => {});
       image.loading = "lazy";
       const number = document.createElement("span");
       number.className = "page-num";
@@ -3963,8 +4747,14 @@
       }
       syncFilters(currentFilter);
       clearEditUndo();
+      annotationUndo = null;
+      annotationSelection = null;
+      await prepareAnnotationsForEditing(page.annotations || []);
+      maskCanvas.width = finalCanvas.width;
+      maskCanvas.height = finalCanvas.height;
+      requestOverlayRender();
       dirty = false;
-      $("btn-save-page").textContent = "Update Page";
+      setDockLabel("btn-save-page", "Save");
     });
     if (ok) showView("process-view");
   }
@@ -4046,7 +4836,11 @@
     let pdf = null;
     for (let i = 0; i < pages.length; i++) {
       checkCancelled();
-      const image = await loadImage(pages[i].final);
+      const image = await loadImage(
+        pages[i].annotations?.length
+          ? await composePageDataUrl(pages[i])
+          : pages[i].final,
+      );
       checkCancelled();
       const source = clone(image);
       const encoded = await FilterProcessor.preparePdfImage(
@@ -4304,7 +5098,10 @@
   $("btn-share").addEventListener("click", () => {
     if (busy || saving || !documentPages.length || shareSession) return;
     shareSession = {
-      pages: documentPages.map((page) => ({ final: page.final })),
+      pages: documentPages.map((page) => ({
+        final: page.final,
+        annotations: page.annotations || [],
+      })),
       revision: 0,
       queued: false,
       sending: false,

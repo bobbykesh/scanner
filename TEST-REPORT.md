@@ -1,3 +1,36 @@
+# Stage 5 — full-size editor, tool dock and editable objects — 16 November 2026
+
+Layout and data-model release on top of Stage 4.3. No new dependency; IndexedDB schema extended with an optional per-page `annotations` array (older pages load with an empty list).
+
+## New Stage 5 checks — PASS (Chromium, 26-check suite, mobile 390×844)
+
+- **Document keeps its size in every editor.** Measured `#canvas-final` before and while Filters, Erase, Text and Signature are open: identical bounding box in all four modes (390×520 at 390×844 viewport, full-bleed width), and unchanged after closing. Previously the page shrank by the panel height in each mode.
+- **Filters tap-again.** Adjustments start collapsed; tapping the already-selected filter tile expands them (strength control becomes visible); tapping again collapses.
+- **Sheet collapse.** The grab handle collapses the sheet to a 44-px strip with only the handle showing, and restores it on the second tap.
+- **Text becomes an object.** Apply closed the panel and rendered the text on the overlay layer; `canvas-final` pixel checksum was **byte-identical before and after**, proving the page pixels are untouched (non-destructive).
+- **Tap to select.** Tapping the placed text showed the selection badge and reported the correct type ("Text"); dragging moved the object (measured painted-region top shifted up) and it stayed selected.
+- **Persistence.** After **Add to Doc** and reopening the page from the gallery, the annotations were restored and re-rendered on the overlay.
+- **Signatures are objects too.** Applying a signature rendered it on the overlay, and tapping it selected it with type "Signature".
+- **Delete + Undo.** Delete removed the selected object; **Undo** restored the painted content.
+- **Export.** Export produced a PDF with the annotations composed into the page pixels.
+- No uncaught page errors or console errors during the session.
+
+## Stage 4.3 checks (retained, updated for the object model) — PASS
+
+- Text sampling, auto-fit, drag/resize/target-box, apply-as-object, Undo, and Cancel leaving the page untouched: **59 checks pass, three consecutive runs**.
+- Signature drawpad, ink retinting, size/darkness/angle, upload → B&W → crop popup → background removal → placement, in-session reuse across pages, and regression on Filters/Erase/Rotate/Save/gallery/Export: all pass in the same 59-check suite.
+
+## Regression — PASS
+
+- Existing PDF/offline suite: **9/9** end-to-end checks (import, crop, filter, multi-page PDF, re-crop, Compress & Share, corrupt-PDF handling, service worker offline import, mobile layout).
+- Additional suite: **4/4** (drag-and-drop PDF, local repair preview + apply via the new collapsible section, save + export, free memory then another import).
+
+## Known trade-off
+
+Annotations are not pixels until output, so Filters and Erase intentionally do not modify placed text or signatures. They are edited or deleted by tapping the object.
+
+## Stage 4.3 verification (retained) — PASS
+
 # Stage 4.3 — Smart Add Text + Add Signature verification — 16 November 2026
 
 Local-only Add Text and Add Signature release, on top of Stage 4.2 (local PDF import, repair preview, Clone). No model weights, AI runtime, server/API, external CDN dependency or new upload path added. IndexedDB schema untouched.

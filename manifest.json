@@ -2,7 +2,7 @@
   "id": "./",
   "name": "ProScan Studio",
   "short_name": "ProScan",
-  "description": "Local-first document scanner — Stage 4.3 document editor with Smart Add Text, Add Signature, non-AI crop repair preview and memory controls",
+  "description": "Local-first document scanner — Stage 5 full-size document editor with editable text and signature objects, Smart Add Text, non-AI crop repair preview and memory controls",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

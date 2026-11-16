@@ -11,7 +11,7 @@
       name="description"
       content="Local-first document cropping, document filters and PDF export."
     />
-    <title>ProScan Studio | Stage 4.3</title>
+    <title>ProScan Studio | Stage 5</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="manifest.json" />
     <link rel="stylesheet" href="style.css" />
@@ -142,7 +142,7 @@
           Back to document
         </button>
         <p class="footnote">
-          Stage 4.3 · Add Text · Add Signature · local processing. Advanced AI is not
+          Stage 5 · Full-size editor · editable text &amp; signatures · local processing. Advanced AI is not
           enabled.
         </p>
       </div>
@@ -195,31 +195,86 @@
             ><canvas id="canvas-mask" aria-label="Erase selection"></canvas>
           </div>
         </div>
-        <div class="bottom-toolbar">
-          <div class="tool-group">
-            <button id="btn-open-filters" class="tool-btn">Filters</button
-            ><button id="btn-open-erase" class="tool-btn">Erase tools</button
-            ><button id="btn-open-text" class="tool-btn">Text</button
-            ><button id="btn-open-signature" class="tool-btn">Signature</button
-            ><button id="btn-undo-edit" class="tool-btn" disabled>
-              Undo edit
-            </button>
-          </div>
-          <div class="tool-group">
-            <button id="btn-recrop" class="tool-btn">Crop</button
-            ><button id="btn-rotate" class="tool-btn">Rotate</button
-            ><button id="btn-save-page" class="tool-btn success">
-              Add to Doc</button
-            ><button id="btn-back" class="tool-btn">Back</button>
-          </div>
+        <div class="bottom-toolbar" hidden aria-hidden="true"></div>
+        <div id="annotation-badge" class="annotation-badge" hidden>
+          <span class="annotation-badge-label"
+            ><span data-annotation-type>Text</span> selected</span
+          >
+          <button id="btn-annotation-edit" class="tool-btn" type="button">
+            Edit
+          </button>
+          <button id="btn-annotation-delete" class="tool-btn danger" type="button">
+            Delete
+          </button>
+          <button
+            id="btn-annotation-deselect"
+            class="tool-btn"
+            type="button"
+            aria-label="Deselect"
+          >
+            ✕
+          </button>
         </div>
+        <nav class="editor-dock" aria-label="Document tools">
+          <button id="btn-recrop" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v13a2 2 0 0 0 2 2h13" /><path d="M18 21V8a2 2 0 0 0-2-2H3" /></svg>
+            <span>Crop</span>
+          </button>
+          <button id="btn-open-filters" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="5.2" /><circle cx="15" cy="15" r="5.2" /></svg>
+            <span>Filter</span>
+          </button>
+          <button id="btn-open-text" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6h14M12 6v13M8.5 19h7" /></svg>
+            <span>Text</span>
+          </button>
+          <button id="btn-open-erase" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 15 7-7a2.5 2.5 0 0 1 3.5 0l3.5 3.5a2.5 2.5 0 0 1 0 3.5L14 19H7l-3-3Z" /><path d="M9 10.5 15.5 17M5 21h14" /></svg>
+            <span>Erase</span>
+          </button>
+          <button id="btn-open-signature" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17c3 1 4-9 7-9 2.2 0 1.7 7 4 7 1.6 0 2-3 3.4-3 1 0 1.6 1.4 3.6 1.4" /><path d="M4 21h16" /></svg>
+            <span>Sign</span>
+          </button>
+          <button id="btn-undo-edit" class="dock-btn" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h9a5 5 0 0 1 0 10h-3" /><path d="m8 6-4 4 4 4" /></svg>
+            <span>Undo</span>
+          </button>
+          <button id="btn-rotate" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.6 6" /><path d="M20 5v6h-6" /></svg>
+            <span>Rotate</span>
+          </button>
+          <span class="dock-spacer"></span>
+          <div class="dock-zoom" aria-label="Zoom" hidden>
+            <button id="btn-editor-zoom-out" class="dock-btn" type="button" aria-label="Zoom out">−</button>
+            <output id="editor-zoom" aria-live="polite">100%</output>
+            <button id="btn-editor-zoom-in" class="dock-btn" type="button" aria-label="Zoom in">+</button>
+            <button id="btn-editor-zoom-fit" class="dock-btn" type="button">Fit</button>
+          </div>
+          <button id="btn-save-page" class="dock-btn dock-primary" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" /><path d="M9 4v6h6V4M9 20v-5h6v5" /></svg>
+            <span>Save</span>
+          </button>
+          <button id="btn-back" class="dock-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6-6 6 6 6" /><path d="M3 12h18" /></svg>
+            <span>Back</span>
+          </button>
+        </nav>
         <section
           id="erase-panel"
           class="erase-studio erase-sheet"
           aria-label="Manual erase editor"
           hidden
         >
-          <div class="editor-view-controls" aria-label="Zoom and history">
+          <button
+            class="sheet-grip"
+            type="button"
+            data-sheet-toggle
+            aria-label="Collapse or expand erase settings"
+            aria-expanded="true"
+          ></button>
+          <div class="sheet-body">
+          <div class="editor-view-controls" aria-label="Erase history">
             <button
               id="btn-erase-undo"
               class="tool-btn"
@@ -236,15 +291,6 @@
             >
               ↷ Redo
             </button>
-            <span class="control-spacer"></span>
-            <button id="btn-zoom-out" class="tool-btn" aria-label="Zoom out">
-              −
-            </button>
-            <output id="erase-zoom" aria-live="polite">100%</output>
-            <button id="btn-zoom-in" class="tool-btn" aria-label="Zoom in">
-              +
-            </button>
-            <button id="btn-zoom-fit" class="tool-btn">Fit</button>
           </div>
           <div class="erase-toolbar" role="group" aria-label="Erase tools">
             <button
@@ -354,7 +400,9 @@
               <span aria-hidden="true">A</span><span>Text · later</span>
             </button>
           </div>
-          <details class="local-repair-controls">
+          <section class="sheet-section" data-open="false">
+            <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Repair &amp; clone</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
+          <details class="local-repair-controls" open>
             <summary>Clone source &amp; result preview</summary>
             <div class="local-repair-row">
               <button id="btn-clone-source" class="tool-btn">
@@ -383,6 +431,9 @@
               AI. Cancel stops a running preview.</small
             >
           </details>
+          </div></section>
+          <section class="sheet-section" data-open="false">
+            <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Brush &amp; background</span><span class="section-value" id="erase-brush-value"></span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
           <label class="cover-mode-row" for="cover-mode"
             >Cover background
             <select id="cover-mode">
@@ -517,6 +568,7 @@
               Manual keeps the pen swatch or white rectangle.
             </p>
           </section>
+          </div></section>
           <div class="erase-status-line">
             <p id="erase-hint" class="erase-hint">
               Pen covers in your chosen color. Click Pen to choose color and
@@ -524,11 +576,11 @@
             </p>
             <output id="erase-count" aria-live="polite">0 edits</output>
           </div>
-          <div class="modal-actions erase-footer">
+          </div>
+          <div class="modal-actions erase-footer sheet-title-row">
             <button id="btn-cancel-erase" class="tool-btn">Cancel</button
             ><button id="btn-clear-mask" class="tool-btn">Clear edits</button
-            ><span class="erase-title"
-              >Erase <small>Local · Stage 4.2</small></span
+            ><span class="erase-title">Erase</span
             ><button id="btn-apply-erase" class="tool-btn primary" disabled>
               Apply
             </button>
@@ -540,7 +592,15 @@
           aria-label="Add matched document text"
           hidden
         >
-          <div class="editor-view-controls" aria-label="Text matching and zoom">
+          <button
+            class="sheet-grip"
+            type="button"
+            data-sheet-toggle
+            aria-label="Collapse or expand text settings"
+            aria-expanded="true"
+          ></button>
+          <div class="sheet-body">
+          <div class="editor-view-controls" aria-label="Text placement helpers">
             <button
               id="btn-sample-text-style"
               class="tool-btn"
@@ -564,19 +624,7 @@
             >
               Hide box
             </button>
-            <span class="control-spacer"></span>
-            <button
-              id="btn-text-zoom-out"
-              class="tool-btn"
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <output id="text-zoom" aria-live="polite">100%</output>
-            <button id="btn-text-zoom-in" class="tool-btn" aria-label="Zoom in">
-              +
-            </button>
-            <button id="btn-text-zoom-fit" class="tool-btn">Fit</button>
+
           </div>
           <div class="text-editor-grid">
             <div class="text-input-row">
@@ -587,6 +635,8 @@
                 aria-label="Text to add to document"
               ></textarea>
             </div>
+            <section class="sheet-section" data-open="true">
+              <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Style &amp; size</span><span class="section-value" id="text-style-value"></span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
             <div class="text-controls-row">
               <label class="text-field"
                 ><span>Font match</span>
@@ -638,6 +688,9 @@
                 />
               </label>
             </div>
+            </div></section>
+            <section class="sheet-section" data-open="false">
+              <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Blend &amp; spacing</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
             <div class="text-options-row">
               <label class="text-check"
                 ><input id="text-auto-fit" type="checkbox" checked /> Auto-fit
@@ -668,6 +721,7 @@
                 />
               </label>
             </div>
+            </div></section>
           </div>
           <div class="erase-status-line">
             <p id="text-hint" class="erase-hint">
@@ -678,12 +732,12 @@
               >Auto-matched</output
             >
           </div>
-          <div class="modal-actions erase-footer">
+          </div>
+          <div class="modal-actions erase-footer sheet-title-row">
             <button id="btn-cancel-text" class="tool-btn">Cancel</button
             ><button id="btn-fit-box-to-text" class="tool-btn">
               Size box to text</button
-            ><span class="erase-title"
-              >Add Text <small>Matched · Local</small></span
+            ><span class="erase-title">Add Text</span
             ><button id="btn-apply-text" class="tool-btn primary" disabled>
               Apply Text
             </button>
@@ -695,9 +749,17 @@
           aria-label="Place signature on document"
           hidden
         >
+          <button
+            class="sheet-grip"
+            type="button"
+            data-sheet-toggle
+            aria-label="Collapse or expand signature settings"
+            aria-expanded="true"
+          ></button>
+          <div class="sheet-body">
           <div
             class="editor-view-controls"
-            aria-label="Signature source and zoom"
+            aria-label="Signature source"
           >
             <button id="btn-change-signature" class="tool-btn">
               ✎ Draw / Scan / Upload
@@ -709,21 +771,11 @@
             >
               Hide box
             </button>
-            <span class="control-spacer"></span>
-            <button
-              id="btn-sig-zoom-out"
-              class="tool-btn"
-              aria-label="Zoom out"
-            >
-              −
-            </button>
-            <output id="sig-zoom" aria-live="polite">100%</output>
-            <button id="btn-sig-zoom-in" class="tool-btn" aria-label="Zoom in">
-              +
-            </button>
-            <button id="btn-sig-zoom-fit" class="tool-btn">Fit</button>
+
           </div>
           <div class="sig-placement-controls">
+            <section class="sheet-section" data-open="true">
+              <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Ink</span><span class="section-value" id="sig-ink-value"></span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
             <div
               class="sig-ink-group"
               role="group"
@@ -755,6 +807,9 @@
                 Dark Charcoal
               </button>
             </div>
+            </div></section>
+            <section class="sheet-section" data-open="false">
+              <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false"><span>Size, darkness &amp; angle</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="sheet-section-body">
             <div class="sig-sliders-row">
               <label class="text-inline-slider" for="sig-scale-slider"
                 ><span>Size</span>
@@ -787,6 +842,7 @@
                 />
               </label>
             </div>
+            </div></section>
           </div>
           <div class="erase-status-line">
             <p id="sig-hint" class="erase-hint">
@@ -798,12 +854,12 @@
               >Pre-scan blend</output
             >
           </div>
-          <div class="modal-actions erase-footer">
+          </div>
+          <div class="modal-actions erase-footer sheet-title-row">
             <button id="btn-cancel-signature" class="tool-btn">Cancel</button
             ><button id="btn-reset-sig-transform" class="tool-btn">
               Reset size</button
-            ><span class="erase-title"
-              >Signature <small>Pre-scan blend</small></span
+            ><span class="erase-title">Signature</span
             ><button id="btn-apply-signature" class="tool-btn primary">
               Apply Signature
             </button>
@@ -952,6 +1008,11 @@
             ><span class="filter-name">No Handwriting</span>
           </button>
         </div>
+        <section class="sheet-section filter-adjustments" data-open="false" id="filter-adjustments">
+          <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false" id="btn-filter-adjustments">
+            <span>Adjustments</span><span class="section-value" id="filter-adjust-value">tap a filter twice</span><svg class="section-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="sheet-section-body">
         <div class="filter-controls">
           <label for="filter-strength" id="filter-strength-label"
             >Strength</label
@@ -1019,6 +1080,8 @@
             adjustments.</small
           >
         </details>
+          </div>
+        </section>
         <p id="filter-description" class="filter-description"></p>
         <p
           id="filter-status"

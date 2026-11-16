@@ -32,13 +32,13 @@ These are vendored, pinned copies of the dependency versions in the supplied app
 - `pdf-3.11.174.min.js`: `5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946`
 - `pdf.worker-3.11.174.min.js`: `feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b`
 
-### First-party application files (Stage 4.3)
+### First-party application files (Stage 5)
 
-- `app.js`: `88ac24478d28f276e84fb18e91e21301abadd53537a07e65e88073e5dc0be8cb`
-- `index.html`: `83efd526c06b5f13ea7dbb5bc15ff6d33ac2fc691abeb66fc10186b477174612`
-- `style.css`: `ba24d1a7d1ccd9a9006b879499dbd401641f50be07c5312ba24aab6a571aa8a4`
-- `sw.js`: `951d84a80da8e722484d986b68cbe8e269ebf523455dc10b8aad65272c1a955b`
-- `manifest.json`: `6f70e3428b131de1a01f7115f230502e4420cb7ade861985c31ed96358d80ce8`
+- `app.js`: `95a07da53bc0c3a305a8c01347e4c778ecd06b8b1a312817e2e111dfcd8d6467`
+- `index.html`: `486a84c64c8e007e9ae6a3b3c79196ee458e1aa4d1598aacd2a22e34d049a92b`
+- `style.css`: `fe413aedca5514e8d6e4ed08d443a9b405a13053f27c3bd8a3186052a9fbcafd`
+- `sw.js`: `b9c50266fa702cf78b3ad0faf046c1e441660610899501ad1e1f06e7357410c9`
+- `manifest.json`: `a135f9410662b70ab943e9ec9c08be24863622357cb8a90242b230a9aae82320`
 - `paper-match.js`: `d43a6690f03539b2c57b61688c94e0926e0e31682e49c051beb886aa1cc74275`
 - `vision.js`: `7f2bdcc170867c9de8b6d85902ca28854974e1b8bf5dea5f1d1014221933173d`
 - `filter-client.js`: `d8c55f37ca6fc46d7df2aaaf2b4c81f67ae6ca3513cb7b3a7ff116e80a1af0b6`

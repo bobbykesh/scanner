@@ -1,8 +1,43 @@
-# ProScan Studio — Complete Stage 4.3 (Smart Add Text + Add Signature)
+# ProScan Studio — Complete Stage 5 (full-size editor + editable objects)
 
-Full replacement files for the existing scanner. This release adds **Smart Add Text** and **Add Signature** to the document editor, on top of local PDF import, bounded non-AI repair previews and the Clone tool. Everything still runs 100% on-device — no build step, API key, account, upload or backend.
+Full replacement files for the existing scanner. This release rebuilds the editing interface around a **full-size document**, adds a **CamScanner-style tool dock with floating collapsible sheets**, and turns added text and signatures into **editable objects** you can tap, move, resize and re-edit at any time. It keeps Smart Add Text, Add Signature, local PDF import, non-AI repair previews and the Clone tool. Everything still runs 100% on-device — no build step, API key, account, upload or backend.
 
-## New in 4.3 — Smart Add Text
+## New in Stage 5 — the interface you asked for
+
+### The document never shrinks
+Opening Filters, Erase, Text or Signature used to reserve space for the panel, so the page got smaller exactly when you needed to see it. Now the document keeps its **full editor size in every mode**:
+
+- The page is drawn full-bleed — the top bar is hidden while editing, so the document uses the whole screen width.
+- Panels are **floating sheets over the lower part of the screen**, never layout blocks. The page underneath is unchanged and never rescaled.
+- On desktop the sheet is a centred card with rounded corners; on phones it slides up from the bottom, like a mobile scanner app.
+- Every sheet has a **grab handle**: tap it to **collapse to a thin strip** for an unobstructed look at the page, tap again to bring the controls back.
+
+### Tools live in a bottom dock
+One icon row replaces the old wide button bar — **Crop · Filter · Text · Erase · Sign · Undo · Rotate**, with **Add to Doc** and **Back** on the right. The active tool is highlighted, the dock stays visible while you edit, and a shared **zoom control** (− 100% + Fit) drives whichever editor is open.
+
+### Settings expand only when you need them
+Each sheet is a set of collapsible sections, one open at a time, so the default state is a short panel:
+
+- **Filters** — tap a filter to select it. **Tap the already-selected filter again** and its **Adjustments** open (strength / sensitivity, B&W style, compare, brightness–contrast–sharpness). Tap again to collapse.
+- **Erase** — slim tool strip; **Repair & clone** and **Brush & background** open on demand.
+- **Text** — text box plus Apply; **Style & size** and **Blend & spacing** open individually.
+- **Signature** — **Ink** and **Size, darkness & angle** open individually.
+
+### Placed text and signatures are real objects
+Applying no longer burns pixels into the page:
+
+- Text and signatures are stored as **annotations** — `{ type, box, box geometry, style or ink }` — drawn on a layer above the page.
+- **Tap a placed object** on the document to select it: its dashed box and corner handles return, and a small **Text selected / Signature selected** bar offers **Edit**, **Delete** and **✕**.
+- **Drag** the box to move it, **drag a corner** to enlarge or shrink (text re-auto-fits when auto-fit is on).
+- **Double-tap** an object, or use **Edit**, to reopen it fully — change the wording, font, size, ink colour, signature ink/darkness/angle.
+- Objects are **saved with the page** and come back editable when you reopen it from Document Stack, including after a reload.
+- **Rotate** re-maps objects to the rotated page so they stay on their content.
+- **Undo** covers adding, moving, resizing, editing and deleting an object.
+- Objects are **rasterised only for output** — Export, Compress & Share and the gallery thumbnails compose them into the pixels, so what you export is what you see.
+
+**One trade-off to know:** because objects are not pixels, **Filters and Erase do not affect them** — a B&W filter will not recolour a placed signature, and erasing will not remove one. Tap the object and use **Edit** or **Delete** instead. Use **Add to Doc** when you want the page stored; the objects travel with it.
+
+## Smart Add Text
 
 Text is drawn as an editable overlay on the page and only becomes pixels when you tap **Apply Text**.
 
@@ -16,7 +51,7 @@ Text is drawn as an editable overlay on the page and only becomes pixels when yo
 
 The matcher is heuristic, not an OCR/font-recognition model: unusual typefaces, handwriting, heavy shadows or very sparse text can fall back to defaults — then use **⊕ Sample text** or set the controls manually.
 
-## New in 4.3 — Add Signature
+## Add Signature
 
 Tap **Signature**. If you have already made a signature in this session it is **reused automatically** on later pages.
 
@@ -124,7 +159,7 @@ Requires a current browser with Web Workers, WebAssembly and OffscreenCanvas. No
 1. **Export important documents and back up your current source files first.** Device/browser storage is not a document backup.
 2. Extract `ProScan-Stage-4.2-Complete.zip`. Its root contains `index.html` and the `vendor` folder; there is no extra project-folder wrapper inside the ZIP.
 3. Upload **all extracted files and the entire `vendor/` folder** to the same published directory as your existing `index.html`. Replace old files, do not append code or upload the ZIP itself as the website.
-4. Wait for deployment to finish. Reload while online, save any open edits, then accept the app update notice. The tab title must become **ProScan Studio | Stage 4.3**.
+4. Wait for deployment to finish. Reload while online, save any open edits, then accept the app update notice. The tab title must become **ProScan Studio | Stage 5**.
 5. If an older stage still appears, use the app's Refresh button while online after exporting/saving. Do not use browser “Clear site data” if you need your saved documents: it can delete IndexedDB pages.
 6. Run the checklist below on your actual phone before using important documents.
 
@@ -286,7 +321,7 @@ No document is sent to an AI service. This release has no trained handwriting/te
 - Large batches/high-resolution editing may hit memory/quota limits or pause the main thread. Browser/OS process termination cannot always be caught.
 - Offline use requires successful service-worker installation, storage capacity and HTTPS/localhost. First access needs the bundled files; private mode/storage eviction may prevent offline availability.
 - Share opens the compression dialog first, then the final explicit user tap sends/downloads the prepared copy. Native availability depends on browser/device permissions; a successful API response is not proof of recipient delivery.
-- For future releases change `CACHE_NAME` in `sw.js`. The Stage 4.3 cache requests fresh install assets and waits for user acceptance. Do not clear IndexedDB just to update the UI.
+- For future releases change `CACHE_NAME` in `sw.js`. The Stage 5 cache requests fresh install assets and waits for user acceptance. Do not clear IndexedDB just to update the UI.
 - Dependencies remain pinned to the previous working versions. No dependency vulnerability/security audit was performed in this stage.
 
 ## Before production
@@ -298,6 +333,6 @@ No document is sent to an AI service. This release has no trained handwriting/te
 5. Test Soft B&W and both binary presets, including fine adjustments.
 6. Test faint print, pencil, stamps, shadows and photos; no filter has universal accuracy.
 7. Export a multi-page PDF and inspect it in your normal viewer/printer.
-8. Test the real Stage 4.2 → Stage 4.3 update, offline reload and native sharing on your own devices.
+8. Test the real Stage 4.3 → Stage 5 update, offline reload and native sharing on your own devices.
 
 See `TEST-REPORT.md` for the automated checks actually executed. Passing tests reduces regression risk; it is not a promise that nothing can break on every device or scan.
