@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "ProScan Studio",
-  "short_name": "ProScan",
-  "description": "Local-first document scanner — Stage 5 full-size document editor with editable text and signature objects, Smart Add Text, non-AI crop repair preview and memory controls",
+  "name": "KeshScan Studio",
+  "short_name": "KeshScan",
+  "description": "KeshScan Studio — local-first document scanning. Crop, filter, erase, add text and sign on device, then export one merged PDF. No uploads, no account.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

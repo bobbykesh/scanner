@@ -4605,7 +4605,7 @@
         expired = true;
         reject(
           new Error(
-            "Device storage did not open. Close other ProScan tabs and reload.",
+            "Device storage did not open. Close other KeshScan tabs and reload.",
           ),
         );
       }, 12000);
@@ -4620,7 +4620,7 @@
       };
       request.onblocked = () =>
         notice(
-          "Storage is blocked by another open tab. Close other ProScan tabs.",
+          "Storage is blocked by another open tab. Close other KeshScan tabs.",
           true,
         );
       request.onsuccess = () => {
@@ -4978,10 +4978,10 @@
   // Export quality is applied by re-encoding pixels, not misused as a jsPDF option.
   function exportName(value = $("filename-input").value) {
     return (
-      (value.trim() || "ProScan_Document")
+      (value.trim() || "KeshScan_Document")
         .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
         .replace(/[. ]+$/g, "")
-        .slice(0, 100) || "ProScan_Document"
+        .slice(0, 100) || "KeshScan_Document"
     );
   }
   function canvasBlob(source, type, quality) {
@@ -5429,7 +5429,7 @@
     if (
       !safeToReload() ||
       !confirm(
-        "Refresh ProScan application files? Saved document storage will not be cleared.",
+        "Refresh KeshScan application files? Saved document storage will not be cleared.",
       )
     )
       return;

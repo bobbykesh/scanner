@@ -1,401 +1,117 @@
-# ProScan Studio — Stage 6 (UX audit + mobile-first interface)
+# KeshScan Studio
 
-This release is a **presentation-layer refresh**: no feature, flow, id or data
-behaviour changed. It applies a human-centred UX process — heuristic evaluation,
-WCAG 2.2 audit, then targeted design — to the Stage 5 build.
+A local-first document scanner that runs entirely in the browser. Import a photo or
+a PDF, crop it, clean it up, fill in text, sign it, and export one merged PDF.
+Nothing is uploaded — there is no backend, no account, no API key and no build step.
 
-Method, evidence, design tokens and the verification thresholds live in
-`UX-METHODOLOGY.md` (workspace root `design/`), and the acceptance checks are
-reproducible with the `ux-audit` script.
-
-## What the audit found (measured at 390×844, headless Chromium)
-
-| Severity | Finding | Before |
-| --- | --- | --- |
-| S1 | Touch targets under 44px | sheet grip 26px, undo/redo 32px, selects 31px, filter ✕/✓ 40px |
-| S1 | Crop precision | 4 corner handles at 26×26, no magnifier |
-| S1 | Hidden "expand settings" gesture | tapping the selected filter twice was the only way, with no hint |
-| S2 | Text sheet hid content | 437px visible / 516px content → 15% hidden |
-| S2 | Dead placeholders | "Magic · later", "Handwriting · later", "Text · later", "AI · later" |
-| S2 | Jargon | "Local repair", "Clone", "pre-scan blend" |
-| S3 | Dock label contrast | "Add to Doc" 4.47:1 (fails 4.5:1) |
-| S3 | Mixed colour meaning | red Cancel next to indigo Apply |
-
-## What changed (after)
-
-| Area | Now |
-| --- | --- |
-| Targets | **0 controls under 44px** in any phone view; dock items 58px tall |
-| Crop | **44px ring handles**, live 132px magnifier on the dragged corner, corner readout, "Apply crop" as the single primary, crop actions in a bottom sheet |
-| Expand settings | one convention (section header + turning caret), value chips are labelled ("Not applied"), tapping a selected filter still opens adjustments |
-| Text sheet | **0% hidden**, every control visible, selects/sliders at 44px |
-| Erase sheet | tools wrap on a grid (nothing clipped in a scroller), one history row, footer no longer covers the last section |
-| Filters | header row (✕ / Filter / ✓) on top, pinned thumbnail strip, thumbnail + label tiles, 44px buttons |
-| Phone shell | fixed top bar (back / title / ⋯ menu), dock labels 11.5px, "Add to Doc" as the only filled commit button, zoom pill floating under the top bar |
-| Desktop shell | sheets dock as a right-hand inspector so the page centre stays free; filter inspector becomes a thumbnail grid |
-| Copy | "Patch area", "Copy texture", "Scan softness"; emoji-only icons replaced with words (📷/📁 rendered as tofu on some devices) |
-| Motion | `prefers-reduced-motion` disables sheet slide and scroll smoothing |
-| Colour | danger reserved for destructive actions only |
-
-## Stage 6.1 — reorder pages quickly
-
-Merging already worked (import several PDFs/images, then Export → one PDF), but
-ordering a 20-page merge meant 20 single-step taps. The Document Stack card now
-carries a **Move…** action: pick any target position and the page is spliced
-there in one step. It reorders the same `documentPages` array the ←/→ buttons
-use, so order stays the single source of truth and the saved order is unchanged.
-
-Gallery actions are also laid out as two tidy rows (←/→ then Move…/Delete) at
-44px each, instead of a ragged stack that pushed Delete off the card.
-
-## Verification
-
-- `test-stage5.js` 26/26, `test-text-sig.js` 59/59, `test-full.js` 4/4,
-  `test-pdf-scanner.js` 9/9 — all green after the refresh.
-- Audit thresholds: V1 0 controls <44px, V2 0% hidden in Text/Erase/Filter
-  sheets, V3 ≥4.5:1 text contrast, V4 200% zoom safe, V5 document geometry
-  unchanged across every editor, V6 full keyboard path with visible focus.
-- One test selector was widened (`/Repair|Patch/i`) because the visible copy was
-  renamed; the assertion is unchanged in intent and still exercises the same
-  control.
+**Live app:** https://bobbykesh.github.io/scanner/
+**Install:** open the link on a phone, then "Add to Home Screen". It works offline.
 
 ---
 
-# ProScan Studio — Complete Stage 5 (full-size editor + editable objects)
+## What it does
 
-Full replacement files for the existing scanner. This release rebuilds the editing interface around a **full-size document**, adds a **CamScanner-style tool dock with floating collapsible sheets**, and turns added text and signatures into **editable objects** you can tap, move, resize and re-edit at any time. It keeps Smart Add Text, Add Signature, local PDF import, non-AI repair previews and the Clone tool. Everything still runs 100% on-device — no build step, API key, account, upload or backend.
+| Stage | Tools |
+| --- | --- |
+| Import | Drop or choose JPEG, PNG, WebP or PDF. Multi-page PDFs import all pages at once (up to 30). |
+| Crop | Drag four corner handles, with a magnifier, live pixel readout and one-tap reset. |
+| Filters | Original, Auto, Lighten, No Shadow, Magic Color, Magic Pro, Grayscale, B&W, Soft B&W, Enhance, Eco, plus strength, brightness, contrast and sharpness. |
+| Erase | Pen, rectangle, patch area and copy-texture tools with adjustable brush size. |
+| Add Text | Text matched to the document's own font, weight, size and ink — placed as an editable object. |
+| Sign | Draw on a full-screen pad, or scan / upload a signature. Black, blue or charcoal ink, reusable on later pages. |
+| Document stack | Reorder any page to any position, delete, reopen and keep editing. |
+| Export | One merged PDF (or JPEG / PNG), edge-to-edge or fitted to A4, with a choice of compression. Share it with the native share sheet. |
 
-## New in Stage 5 — the interface you asked for
+Added text and signatures are **non-destructive objects**: tap a placed object to
+select it, then edit or delete it. They are only flattened when you export.
 
-### The document never shrinks
-Opening Filters, Erase, Text or Signature used to reserve space for the panel, so the page got smaller exactly when you needed to see it. Now the document keeps its **full editor size in every mode**:
+---
 
-- The page is drawn full-bleed — the top bar is hidden while editing, so the document uses the whole screen width.
-- Panels are **floating sheets over the lower part of the screen**, never layout blocks. The page underneath is unchanged and never rescaled.
-- On desktop the sheet is a centred card with rounded corners; on phones it slides up from the bottom, like a mobile scanner app.
-- Every sheet has a **grab handle**: tap it to **collapse to a thin strip** for an unobstructed look at the page, tap again to bring the controls back.
+## Privacy
 
-### Tools live in a bottom dock
-One icon row replaces the old wide button bar — **Crop · Filter · Text · Erase · Sign · Undo · Rotate**, with **Add to Doc** and **Back** on the right. The active tool is highlighted, the dock stays visible while you edit, and a shared **zoom control** (− 100% + Fit) drives whichever editor is open.
+Everything happens on the device. Documents live in the browser's IndexedDB and
+are never transmitted. There is no analytics, no tracking and no third-party
+runtime request beyond the vendored libraries in `vendor/`. The app works fully
+offline after the first load.
 
-### Settings expand only when you need them
-Each sheet is a set of collapsible sections, one open at a time, so the default state is a short panel:
+---
 
-- **Filters** — tap a filter to select it. **Tap the already-selected filter again** and its **Adjustments** open (strength / sensitivity, B&W style, compare, brightness–contrast–sharpness). Tap again to collapse.
-- **Erase** — slim tool strip; **Repair & clone** and **Brush & background** open on demand.
-- **Text** — text box plus Apply; **Style & size** and **Blend & spacing** open individually.
-- **Signature** — **Ink** and **Size, darkness & angle** open individually.
+## Running it
 
-### Placed text and signatures are real objects
-Applying no longer burns pixels into the page:
+There is no build step. Serve the folder over HTTP:
 
-- Text and signatures are stored as **annotations** — `{ type, box, box geometry, style or ink }` — drawn on a layer above the page.
-- **Tap a placed object** on the document to select it: its dashed box and corner handles return, and a small **Text selected / Signature selected** bar offers **Edit**, **Delete** and **✕**.
-- **Drag** the box to move it, **drag a corner** to enlarge or shrink (text re-auto-fits when auto-fit is on).
-- **Double-tap** an object, or use **Edit**, to reopen it fully — change the wording, font, size, ink colour, signature ink/darkness/angle.
-- Objects are **saved with the page** and come back editable when you reopen it from Document Stack, including after a reload.
-- **Rotate** re-maps objects to the rotated page so they stay on their content.
-- **Undo** covers adding, moving, resizing, editing and deleting an object.
-- Objects are **rasterised only for output** — Export, Compress & Share and the gallery thumbnails compose them into the pixels, so what you export is what you see.
-
-**One trade-off to know:** because objects are not pixels, **Filters and Erase do not affect them** — a B&W filter will not recolour a placed signature, and erasing will not remove one. Tap the object and use **Edit** or **Delete** instead. Use **Add to Doc** when you want the page stored; the objects travel with it.
-
-## Smart Add Text
-
-Text is drawn as an editable overlay on the page and only becomes pixels when you tap **Apply Text**.
-
-1. In the editor toolbar tap **Text**. The panel opens and immediately **samples nearby document text**.
-2. Matching runs locally on the page canvas: an 8-connected-component pass finds printed glyphs, measures cap height, stroke-to-height ratio, serif/sans cues and glyph-width consistency, and takes the median ink colour. The result sets font family (document serif, sans, office sans, typewriter, narrow), weight, size and ink colour — shown in the **Matched …** readout.
-3. Type your text. **Auto-fit to box** binary-searches the largest size that fits the box without overflow (multi-line supported).
-4. Fine-tune with **Font match**, **Weight**, **Size**, **Ink**, **Scan softness** and **Spacing** — softness slightly blurs and lightens the glyphs so they blend into the scan.
-5. Position it: drag the box, drag any corner handle to resize, or use **⛶ Target box** and drag the exact area the text must fit (auto-fit then applies to that box). **⊕ Sample text** lets you drag over any printed line to re-sample from it.
-6. **PaperMatch** is reused to paint a real paper-texture patch behind the text when **Cover old text underneath** is on, so erased/blank areas still look like the scanned page.
-7. **Hide box** previews the clean result. **Apply Text** commits it to the page and enables the existing single-level **Undo edit**. **Cancel** discards without touching the page.
-
-The matcher is heuristic, not an OCR/font-recognition model: unusual typefaces, handwriting, heavy shadows or very sparse text can fall back to defaults — then use **⊕ Sample text** or set the controls manually.
-
-## Add Signature
-
-Tap **Signature**. If you have already made a signature in this session it is **reused automatically** on later pages.
-
-1. **Draw** on the pad with finger, stylus or mouse (pen thickness, Undo, Clear). **Use Drawn Signature** trims to the ink and goes straight to placement.
-2. Or **Scan Signature (Camera)** / **Upload Signature Image** for a signature on paper.
-3. The image is converted locally to **B&W**: a downscaled copy estimates the paper illumination field, the field is subtracted from every pixel, and the remainder is thresholded by the **B&W contrast** slider. Uneven phone lighting flattens to clean white paper.
-4. The **Crop Signature** popup opens on that B&W image with a crop box auto-fitted around the ink plus four draggable corner handles; drag inside to move. **Autofit** and **Full image** reset it. A live **background removed** preview shows the transparent result while you drag.
-5. **Use This Signature** applies alpha matting — paper becomes fully transparent, ink stays opaque — and returns to the page.
-6. Place it: drag to move, corner-drag or the **Size** slider to scale, **Ink darkness** and **Angle** to tune. **Ink** offers **Scanned Black**, **Ballpoint Blue** and **Dark Charcoal**.
-7. The preview and the commit both composite with a **multiply pre-scan blend** plus a light blur, so the ink sits into the paper texture instead of looking like a pasted sticker.
-8. **Apply Signature** commits (Undo edit available) and remembers the signature for the remaining pages. **Draw / Scan / Upload** replaces it; **Reset size** restores the original placement.
-
-Signatures and text stay in memory only for the current session — nothing is uploaded, and they are not written into IndexedDB.
-
-## Previous release — Local PDF Upload & Import
-
-1. From **Import Document** (or **Add Page** in Document Stack), choose or drag-and-drop a **PDF file** (`.pdf`) in addition to JPEG, PNG or WebP images.
-2. **Single-page PDFs** open directly in the **Manual Crop** studio with the four corners initialized to the full page bounds (`0,0` to `width-1,height-1`) so margins are not clipped unless you move the handles. Drag the corners to crop if needed, or tap **Flatten & Process** to keep the exact full page and proceed to **Filters** and **Erase tools** (`Pen`, `Rectangle`, `Local repair`, `Clone`).
-3. **Multi-page PDFs** (up to 30 pages per import, up to 35 MB) render locally page-by-page and import directly into your **Document Stack**. Tap any imported page (`Page X · Edit`) to apply **Filters**, **Erase tools**, **Rotate**, or tap **Crop** to perspective-crop that individual page and **Update Page** in place. You can also immediately use **Export** or **Share PDF** (**Compress & Share**) on the imported PDF.
-4. PDF rendering runs 100% on-device using bundled **PDF.js 3.11.174** (`vendor/pdf-3.11.174.min.js` and `vendor/pdf.worker-3.11.174.min.js`), precached by the service worker for offline use and with an automatic main-thread fallback if worker startup is blocked.
-
-## New in 4.2 — non-AI repair preview and Clone
-
-Built as a separate release from the locked, accepted Stage 4.1. The original Stage 4.1 folder and ZIP are not modified. This release adds no AI model, server, paid API, account, or document uploads.
-
-### Local repair: preview before committing
-
-1. Open **Erase tools → Local repair**. Brush size remains available; palette colors do not affect repair.
-2. Paint a small cyan selection. The **Clone source & result preview** section opens automatically.
-3. Tap **Preview result**. The cyan mask is replaced by a flattened result preview in the existing overlay canvas; the underlying page is still unchanged.
-4. Use **Show before / Show result** to compare the whole draft batch against the page at editor entry. Apply commits the result; Cancel discards the whole session.
-5. Drawing/Undo/Redo/Clear or selecting another tool exits result-preview mode back to editable draft selections. Apply can also process a draft directly without a separate Preview tap, retaining the prior workflow.
-
-Repair runs conventional OpenCV Telea inpainting on **one crop per stroke**, in drawing order with any covers/clones. It only composites selected pixels back. It does not blur or regenerate the whole page. Small defects work best; large areas, folds, texture and nearby writing can still smear. Inspect results before Apply.
-
-### Clone: copy clean paper texture
-
-1. Select **Clone**, or use **Set clone source** in the preview section.
-2. Tap a clean paper area in the document. Picking a source does not create an edit.
-3. Set brush size if needed, then paint over the unwanted area. Each new stroke starts at the chosen source; its path copies the corresponding source path.
-4. Preview/compare, Apply or Cancel. Session Undo/Redo/Clear and the outer image-edit Undo remain available.
-
-The source is the unchanged visible page from when this erase session began—not the archival original and not earlier draft edits. Source coordinates and stroke offsets are held in document coordinates, so zoom/pan do not intentionally move the sampled content. No additional full-page clone-source canvas is allocated. If the mapped source leaves the image, copying is clipped/transparent there; choose another source rather than expect invented content. Clean sources can still be a poor match under different lighting, and copied text will be copied too. Pen/Rectangle cover modes do not affect Clone or Local repair and are hidden while those tools are selected.
-
-### Memory/cancellation safeguards
-
-- Repair worker crop: **maximum 1024×1024 including 32-pixel context and brush bounds**. This is a processing bound, not a model resolution or a promised RAM budget. Oversized strokes fail before processing; Undo and use shorter strokes.
-- Exact draft-footprint guards: maximum **4 MiB total one-byte crop masks per preview batch**. Apply fewer repair strokes at a time if that limit is reached. Small translated canvases can rasterize edges slightly differently between engines; intersecting with the visible draft footprint prevents newly changed unselected edge pixels.
-- A worker startup/loading failure can use the already loaded main OpenCV engine for crops **no larger than 512×512**. The preview status discloses fallback use. Larger fallback work is refused. This fallback uses brief synchronous processing; the browser cannot interrupt an OpenCV call mid-operation, and the limit does not guarantee an exact time.
-- **Cancel** (or Escape) during a running Preview invalidates the session and terminates its worker. Late results cannot overwrite a reopened editor. During final Apply, wait for the operation to finish, as before.
-- The existing full-page overlay canvas is reused for result preview; before/after toggles its visibility rather than allocating a second full-page preview. Crop canvases and matrices are released after each job. Current working images and the existing bounded Undo snapshot still occupy memory.
-- The Stage 4.1 **Memory** button remains unchanged in behavior: finish/cancel the editor first, then release temporary workers/previews. It keeps documents/current edits and preserves Undo unless you explicitly confirm discarding it. Browser reclamation timing is not controllable.
-
-**No invisible-erasure or secure-redaction guarantee.** These operations estimate/copy a plausible background, cannot recover hidden wording, and retain original working sources/Undo as before. Real iPhone 14 Safari/Chrome testing is still required. Automated desktop Chromium and WebKit checks are not physical-device certification.
-
-## Preserved from 4.1: local tools and safe memory controls
-
-### Paper background modes
-
-- **Auto · follow gentle shading** (default): Rectangle/Pen use a small bilinear color field estimated near the selection corners. It follows gradual shading instead of using one flat color. Dark corner outliers fall back to the overall paper estimate to reduce ink contamination. It is not texture synthesis, AI, inpainting, or recovery of original hidden pixels. Dense text or strong/complex shadows can still give poor results.
-- **Auto · solid paper match** keeps the previous flat-estimate option.
-- **Picked paper color · both tools** uses the solid paper color you choose. Tap **Pick paper**, then tap a clean paper area on the displayed document. Sampling does not draw a stroke. Tapping Pick paper again cancels; selecting a tool cancels pending picking. The color input lets you choose an exact custom color. Both Pen and Rectangle use it.
-- **Manual · pen color / white rectangle** retains old behavior. Choosing a palette swatch switches to Manual. Existing marks are not recolored when you change modes.
-
-The source is a fixed snapshot at maximum 800-pixel edge, not a new full image for every move. Each shading tile is only 26×26 pixels and recalculated when its command bounds change. Preview and Apply share the same field. Shapes remain opaque (Pen stroke edges are antialiased). Local repair remains separate. Short pen strokes work better across changing paper conditions.
-
-### Free memory
-
-Tap the **Memory chip icon** in the top bar. On phones the button is icon-only to keep the navigation compact.
-
-- **Free memory** terminates the filter worker (including its OpenCV/WASM runtime), cancels queued worker requests and releases thumbnail/temporary selection canvases. The filter worker is lazily reloaded on the next filter/PDF job, including offline after successful caching.
-- Saved IndexedDB documents, current working images, current unsaved edits, offline app assets and downloaded files are not deleted. **Undo is retained by default.**
-- Optional **Also discard the previous image-edit Undo snapshot** requires both selecting the checkbox and a separate confirmation. It keeps current edits but removes that one Undo opportunity. Free memory never silently discards editor-session drafts; finish/cancel active Erase/Filter/Share before using it.
-- Old Undo canvases are explicitly reduced when replaced/discarded. The browser decides when released memory is reclaimed. No exact MB-freed promise or total-memory meter is offered.
-- The main crop/vision engine, current page/source canvases and saved-page strings remain resident for continued editing. This is not an unload-everything button or Clear site data. Large batches can still exhaust memory; export important documents.
-
-### AI research—not installed yet
-
-This release intentionally contains **no AI runtime or model weights**, performs no automatic model download and uploads no documents. You requested local improvements plus AI research; the findings are in **AI-MODEL-RESEARCH.md**. A pinned MI-GAN model ran on synthetic fixtures in desktop Chromium and WebKit, but its fill was too dark on the paper fixture and peak memory/iPhone performance are not validated. That is not sufficient for an iPhone-ready AI release. The untested model is not bundled into your working scanner.
-
-`research/` contains optional benchmark evidence, not deployable AI. Do not enable it as an app feature. Any future AI release must test real document crops, masked-only compositing, memory, cancellation, and a physical iPhone 14 before shipping. Nothing in 4.1 requires a paid API or backend.
-
-## Preserved from 3.2
-
-- **The cropped scan is the PDF page** by default: no A4 canvas, padding or added margins. Each page retains its own proportions and portrait/landscape orientation. The longest physical edge is 297 mm; proportions, not an original scanner DPI, determine the other edge.
-- Optional **Fit to A4 · 5 mm margins** in both Export and Share. Compression changes embedded pixel resolution/quality, not the chosen PDF geometry.
-- Original, Auto, Lighten, No Shadow, Magic Color, Magic Pro, Grayscale, B&W, B&W 2. Soft B&W remains a separate gentle grayscale preset. Enhance/Eco/legacy Magic remain available.
-- Expand **Brightness · Contrast · Sharpness** for optional fine controls. Neutral Original copies the cropped/edited working pixels exactly. Manual covering creates a new working base, as before.
-- OpenCV recipes run in a **Web Worker**, with queued previews, stale-result guards and transferable buffers. This is CPU/WASM processing, not a claim of GPU acceleration. Full image copies, crop/editing and final PDF assembly can still cost UI time. Cancellation discards obsolete results; it does not interrupt an OpenCV operation already running.
-- Strict B&W and B&W 2 are re-binarized after adjustments. Truly opaque binary final pages use a **1-bit lossless grayscale PNG/PDF image path** where CompressionStream is supported; other browsers use lossless PNG. Gray/color pages use JPEG. Downscaling remains information-losing, even for binary pages. Painting gray or rotating with antialiasing can make a formerly binary page continuous-tone.
-- Old saved versions 1–3 keep their legacy recipe and exact saved pixels on reopen. A **Use updated preset** button explicitly switches an old setting to the new recipe. No database schema migration or automatic image rewrite.
-
-### Filter interface
-
-`await applyFilter(imageData, filterType, settings?, control?)` returns a new ImageData without detaching or modifying the caller's input. `FilterProcessor.defaults(type)` supplies version-4 defaults. Brightness/contrast range from -50 to 50, sharpness from 0 to 100. `control` can specify a cancellation group and queue priority. See `filter-client.js`.
-
-Recipes: Auto uses white balance/histogram stretch; Lighten uses gamma/offset; No Shadow uses reduced-resolution dilation/heavy-blur illumination estimation and division; Magic Color adds white-paper tone mapping/saturation/unsharp masking; Magic Pro adds bilateral smoothing and stronger normalization/sharpening. Grayscale preserves continuous tones; B&W uses adaptive thresholding; B&W 2 uses less blur and greater faint-stroke sensitivity. Strong processing can erase pale marks or amplify noise. Magic Pro is not AI and cannot reliably repair heavy stains, creases, hidden wording or major damage.
-
-Requires a current browser with Web Workers, WebAssembly and OffscreenCanvas. No backend, AI upload or automatic handwriting removal is enabled.
-
-**Deployment:** `tests/` and `research/` are optional and is not needed on GitHub Pages. Markdown documentation is optional for app operation. Upload all app assets and the entire `vendor/` folder, keeping licenses.
-
-## Upgrade safely
-
-1. **Export important documents and back up your current source files first.** Device/browser storage is not a document backup.
-2. Extract `ProScan-Stage-4.2-Complete.zip`. Its root contains `index.html` and the `vendor` folder; there is no extra project-folder wrapper inside the ZIP.
-3. Upload **all extracted files and the entire `vendor/` folder** to the same published directory as your existing `index.html`. Replace old files, do not append code or upload the ZIP itself as the website.
-4. Wait for deployment to finish. Reload while online, save any open edits, then accept the app update notice. The tab title must become **ProScan Studio | Stage 5**.
-5. If an older stage still appears, use the app's Refresh button while online after exporting/saving. Do not use browser “Clear site data” if you need your saved documents: it can delete IndexedDB pages.
-6. Run the checklist below on your actual phone before using important documents.
-
-Built on the locked, accepted complete Stage 4.1 package. Saved-page IDs, database/store names and schema version are unchanged. The vendor libraries are unchanged and included in full again to prevent missing-folder problems. No AI upload or model API is enabled.
-
-Expected published layout:
-
-```text
-index.html
-style.css
-app.js
-vision.js
-filter-client.js
-filter-worker.js
-filter-core.js
-pdf-image-codec.js
-paper-match.js
-local-repair-core.js
-manifest.json
-sw.js
-icon.svg
-icon-192.png
-icon-512.png
-README.md
-AI-MODEL-RESEARCH.md
-TEST-REPORT.md
-THIRD-PARTY.md
-vendor/
-    opencv-4.5.4.js
-    jspdf-2.5.1.umd.min.js
-    pdf-3.11.174.min.js
-    pdf.worker-3.11.174.min.js
-    LICENSE-OpenCV.txt
-    LICENSE-jsPDF.txt
-    LICENSE-PDFjs.txt
+```
+python3 -m http.server 8080
 ```
 
-For your current deployment, these vendor URLs must return JavaScript, not 404 or HTML:
+then open `http://localhost:8080`. Opening `index.html` directly from the
+filesystem will not work, because the app uses Web Workers and a service worker.
 
-- `https://bobbykesh.github.io/scanner/vendor/opencv-4.5.4.js`
-- `https://bobbykesh.github.io/scanner/vendor/jspdf-2.5.1.umd.min.js`
-- `https://bobbykesh.github.io/scanner/vendor/pdf-3.11.174.min.js`
-- `https://bobbykesh.github.io/scanner/vendor/pdf.worker-3.11.174.min.js`
+### Deployment (GitHub Pages)
 
-This OpenCV file embeds its WebAssembly binary; it does not require a separate `.wasm` upload.
+1. Push these files to the repository root (or `main` branch `/docs`).
+2. Settings → Pages → Source: **Deploy from a branch**, branch `main`, folder `/`.
+3. Open `https://<user>.github.io/scanner/` and add it to the home screen.
 
-## New: Compress & Share
-
-From the Document Stack, click **Share PDF**. A **Compress & Share** dialog opens before sending anything. It automatically prepares a recommended Balanced copy, then rebuilds it when you change compression settings. No separate Export step is needed.
-
-1. Choose a preset or custom JPEG quality/resolution.
-2. Wait until **Generated PDF size** shows the actual completed PDF size, not an estimate. All saved pages are included.
-3. Edit the PDF name if desired.
-4. Tap **Share PDF** in the dialog to open the device's share sheet with that exact prepared copy.
-
-The final tap is deliberate: browsers require a fresh user gesture for native file sharing. PDF encoding is finished before the tap, rather than risking a blocked share call after lengthy asynchronous processing. You do not have to first export a file and import it again.
-
-### Compression choices
-
-| Preset | JPEG quality | Maximum longest edge per page |
-| --- | --- | --- |
-| Best quality | 95% | Keep current working resolution |
-| Light | 85% | 2400 px |
-| Balanced (default) | 65% | 1800 px |
-| Strong | 45% | 1200 px |
-| Custom | Slider from 20–100% | Keep resolution, 2400, 1800 or 1200 px |
-
-Images are only downscaled, never enlarged. These are pixel limits, not promised file sizes or scan DPI. Each PDF page follows the selected layout, independently of compression. Gray/color pages use JPEG; exact binary pages follow the lossless path described above.
-
-**Compression is lossy.** Stronger settings can reduce small-text/stamp clarity; file-size reductions vary and are not guaranteed for every source. The app displays the actual generated size and does not claim an estimated percentage reduction against an unknown original file. Use Best/Light for delicate documents and inspect the PDF when readability matters.
-
-### Sharing, cancellation and recovery
-
-- Compression uses disposable canvases from snapshots of the saved final page images. It does not change original/cropped/final saved pixels, filter settings, page order, editor canvases or the database.
-- Original working sources remain available; this affects only the copy being sent. The normal Export dialog and its quality settings are independent and unchanged.
-- No file is sent or downloaded merely by changing a compression preset.
-- **Download copy** saves the same generated PDF bytes as Share would send. It does not regenerate at another quality.
-- If the browser cannot share PDF files, the final action reads **Download PDF** instead, with a clear explanation. Send that downloaded file using another app.
-- Cancelling the native share sheet keeps the prepared copy ready to retry. A native sharing error also retains it so you can retry or explicitly Download copy with a fresh gesture.
-- Cancelling the compression dialog discards its pending copy. A cancelled/stale preparation result cannot overwrite a newer selection. Changing settings rapidly builds the latest request only.
-- PDF preparation failure shows a Retry action without changing saved pages.
-- Cancel leaves the editor available even if an old image decode is still winding down.
-- On phones, the settings scroll independently while Cancel/Download/Share remain visible in the footer.
-- This flow works offline after successful app/library caching. Transmitting a file through another app may still need connectivity.
-- Presets reset to Balanced each time you reopen Share; saved-page data and your separate Export settings are not repurposed to store sharing preferences.
-
-## Optional browser AI remains deferred
-
-Follow the model research report before enabling AI. The agreed route is a self-hosted browser model with no paid backend. Require on-demand download, one bounded repair job at a time, preview/Undo/Cancel, and worker unloading. No document upload or model API key is needed for that design. Actual model quality, peak memory and physical iPhone 14 support remain release gates—not claims of this package.
+Service-worker updates are versioned in `sw.js`. Bump `CACHE_NAME` on every
+deploy and existing users get an in-app update prompt — never a surprise reload.
 
 ---
 
-## 1. Pen color and size — like the supplied reference
+## Requirements and limits
 
-Open **Erase tools**, then click **Pen**. A bottom-panel section opens with:
+- A current browser with Web Workers, WebAssembly, OffscreenCanvas and
+  IndexedDB. Chrome, Edge, Safari 16.4+ and Firefox all work.
+- Files up to 35 MB. The working image's longest edge is capped at 2800 px for
+  mobile memory safety; imported PDF pages are rendered at 2200 px (1800 px above
+  10 pages).
+- **Merged exports are raster:** pages are re-encoded as images, so text in the
+  exported PDF is not selectable. Searchable OCR is not enabled in this release.
+- Erase and patch tools estimate a plausible background. They are **not**
+  secure redaction and cannot recover or guarantee removal of hidden content.
+- Storage is not a backup. Export important documents and keep the originals.
 
-- Eight opaque neutral swatches: White, Off-white, Light gray, Silver gray, Medium gray, Dark gray, Charcoal and Black.
-- A selected-color ring and a small color indicator on the Pen button.
-- A full-width **Size** slider, initially 3, adjustable from 1–80.
-- A chevron to collapse the settings and regain preview space.
+---
 
-In **Manual** mode, Pen **paints over the document in the selected solid color**. Auto instead estimates smooth nearby paper shading for each stroke. Manual does not call inpainting, blur or automatically select letters. Auto interpolates an estimated color field, not the hidden original background. This is deliberate manual covering, as requested. The stroke interior is opaque; brush edges are antialiased for smoothness.
+## Files
 
-Size is measured in displayed screen pixels at the start of each stroke and converted into image coordinates. Zooming in lets you make finer edits in the underlying image. Existing strokes stay anchored to document pixels when you zoom, pan, resize, or reopen the settings. Changing the current color or size does not retroactively change earlier strokes.
+```
+index.html              app shell
+style.css               all styling (design tokens at the bottom of the file)
+app.js                  application logic
+sw.js                   service worker (precache + update prompt)
+manifest.json           installable PWA metadata
+icon.svg                 app icon (source)
+icon-192.png             home-screen icon
+icon-512.png             home-screen icon
+vision.js               crop / perspective engine (OpenCV wrapper)
+filter-client.js        filter worker client
+filter-core.js          filter presets and adjustments
+filter-worker.js        filter worker entry
+pdf-image-codec.js      PDF image encoding (JPEG / 1-bit PNG)
+paper-match.js          document font, weight and ink matching for Add Text
+local-repair-core.js    erase / patch engine
+vendor/                 pinned third-party libraries and their licences
+THIRD-PARTY.md          dependency provenance and SHA-256 checksums
+TEST-REPORT.md          test and UX-audit results
+```
 
-## 2. Rectangle background mode
+Every file above is loaded by the app. `vendor/` is pinned — these are not
+fetched from a CDN at runtime.
 
-Auto is the default and estimates gentle paper shading. Solid Auto and picked paper color are also available. Manual restores the previous **pure-white #FFFFFF rectangle**, independent of the pen swatch. Both are opaque covering, not blur or inpainting. The preview displays the fill before Apply. Rectangle coordinates are rounded to image-pixel boundaries. A zero-size rectangle does not create an edit.
+---
 
-## 3. Local repair — updated in 4.2
+## Testing
 
-Local repair remains separate from Pen and Rectangle. It uses a cyan selection and brush size, but palette colors are ignored. The new bounded crop/preview workflow is described at the top. Cover and Clone commands are processed in drawing order with repair strokes. Small marks work best. The tool is disabled if the runtime does not expose conventional inpainting; the other tools remain available.
+The app was verified with four automated suites in headless Chromium and a
+scripted UX audit. Results, thresholds and before/after numbers are in
+[TEST-REPORT.md](TEST-REPORT.md).
 
-## 4. Manual editor safety and precision controls
+---
 
-- Strokes/rectangles are held as document-coordinate commands in a transparent preview overlay. They are committed only on **Apply**.
-- **Undo / Redo** operate on the current erase-session edits, including Clear edits. New drawing after Undo discards that session's redo branch.
-- **Clear edits** clears the draft and can itself be undone.
-- **Cancel** discards the entire session and leaves the previous final image unchanged.
-- **+ / −**, **Fit**, **Pan**, and two-finger pinch zoom are available. Zoom is limited to 100–400%.
-- A pinch cancels the provisional first-finger stroke so zooming should not leave a stray mark. Pointer cancellation also discards the interrupted stroke.
-- Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z undo/redo the current erase session. Escape closes pen settings first, then cancels the editor.
-- There are up to 100 session undo/redo steps and 300 drawn edits per session. Brush paths are bounded at 10,000 sampled points per stroke for memory safety. Apply and reopen the editor for additional work.
-- After Apply, the main **Undo edit** can restore the pre-apply image/base/settings. This remains a single image-edit undo level, not an unlimited external history.
+## Licence and trademarks
 
-Applying manual edits deliberately bakes the visible result into a new filter base and sets **Original**. Filters then start from that edited base so they do not resurrect covered content. Original means that working base, not an untouched archival photo. This is not a fully layered, non-destructive project format; keep an exported backup and your original photo.
-
-## 5. Soft and strict black and white
-
-Choose **Soft B&W** for the previous gentle grayscale recipe (default strength 40). It preserves gray detail and black/white endpoints without hard thresholding. Choose **B&W** or **B&W 2** for strict binary output; inspect faint print/pencil and speckles before saving. Old saved B&W pages retain their Soft/Crisp style and sensitivity until you explicitly change presets or modernize. Filters cannot restore detail already lost in a saved binary base.
-
-## Preserved from the previous stages
-
-- Theme/Refresh local SVG icons, theme preference, and refresh safeguards.
-- OpenCV readiness timeout/retry and local bundled libraries.
-- Image import, perspective crop, stable handles, crop geometry validation, keyboard controls and crop undo/reset.
-- Scrolling real-image filter thumbnails, strength controls, source comparison, exact filter cancel, and full-working-resolution Apply.
-- Original, Auto Enhance, No Shadow, Lighten, Enhance, Eco, Grayscale and legacy Magic presets.
-- IndexedDB saving/restoration, reopening saved final pixels, deletion/reordering.
-- Multi-page PDF export with page fitting/orientation, quality re-encoding, first-page JPEG/PNG export, sharing with download fallback.
-- Offline app-shell/library caching after installation and user-accepted cache updates.
-
-The database remains `ProScanDB`, store `pages`, schema version 1. The existing optional `stage32Version` marker is retained and settings fields without changing IDs or forcing a schema upgrade. Very old/unknown-filter records retain the safe saved-final-image baseline migration. Avoid rolling back to older code after editing new Stage 3 pages, because older software does not understand version-4 presets/adjustments.
-
-## Important privacy / document-integrity note
-
-**This is not certified secure redaction.** Covering removes underlying pixels from the newly flattened final page image, but the app can still retain an original working source, pre-apply Undo snapshots and older exported copies. Do not distribute project data or claim that all copies of obscured content have been securely destroyed. Inspect exported final images/PDFs and use a dedicated redaction workflow for sensitive/legal requirements.
-
-No document is sent to an AI service. This release has no trained handwriting/text detector, generative model, OCR pipeline or AI backend. Magic selection, handwriting detection and text detection remain disabled instead of pretending to work. PDFs are image-based, not searchable OCR PDFs.
-
-## Hosting, resolution and offline limits
-
-- Serve over HTTPS, or localhost for development. Do not double-click `index.html` into a `file://` URL.
-- To test locally with Python 3, run `python -m http.server 8080 --bind 0.0.0.0` from this folder, then open `http://localhost:8080` on that computer. A phone on a normal LAN HTTP address generally does not have service-worker support; use HTTPS for real phone/PWA tests.
-- Preserve lowercase paths and the `vendor` folder. Custom Content Security Policies must allow local JavaScript and OpenCV WebAssembly compilation.
-- Import rejects files above 35 MB and caps the working image's longest edge at 2800 pixels for mobile memory safety. Browser-decodable formats only; HEIC support is browser-dependent. Keep the real original files separately.
-- The stored `original` is a JPEG working-source copy, not the untouched upload. Cropped/final working images use PNG to reduce repeated JPEG degradation.
-- Filter previews use a 1200-pixel maximum edge and 260-pixel thumbnails; the full working image is processed on Apply. Fine details can differ slightly after resampling.
-- Large batches/high-resolution editing may hit memory/quota limits or pause the main thread. Browser/OS process termination cannot always be caught.
-- Offline use requires successful service-worker installation, storage capacity and HTTPS/localhost. First access needs the bundled files; private mode/storage eviction may prevent offline availability.
-- Share opens the compression dialog first, then the final explicit user tap sends/downloads the prepared copy. Native availability depends on browser/device permissions; a successful API response is not proof of recipient delivery.
-- For future releases change `CACHE_NAME` in `sw.js`. The Stage 5 cache requests fresh install assets and waits for user acceptance. Do not clear IndexedDB just to update the UI.
-- Dependencies remain pinned to the previous working versions. No dependency vulnerability/security audit was performed in this stage.
-
-## Before production
-
-1. Test pen colors and size on your physical phone; confirm black/gray/white interior colors in the export.
-2. Check Auto on cream/gray paper, then select Manual: the rectangle must be white regardless of pen swatch.
-3. Undo/redo, clear/undo, cancel, zoom/pan and pinch; verify marks stay aligned.
-4. Apply, save/reload and change filters; covered content must not reappear.
-5. Test Soft B&W and both binary presets, including fine adjustments.
-6. Test faint print, pencil, stamps, shadows and photos; no filter has universal accuracy.
-7. Export a multi-page PDF and inspect it in your normal viewer/printer.
-8. Test the real Stage 4.3 → Stage 5 update, offline reload and native sharing on your own devices.
-
-See `TEST-REPORT.md` for the automated checks actually executed. Passing tests reduces regression risk; it is not a promise that nothing can break on every device or scan.
+Source is provided for use by the named organisation. The name **KeshScan
+Studio**, its logo and its icons are unregistered trademarks of the author; see
+[TRADEMARK.md](TRADEMARK.md). Third-party libraries retain their own licences —
+see [THIRD-PARTY.md](THIRD-PARTY.md).

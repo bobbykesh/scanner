@@ -32,13 +32,13 @@ These are vendored, pinned copies of the dependency versions in the supplied app
 - `pdf-3.11.174.min.js`: `5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946`
 - `pdf.worker-3.11.174.min.js`: `feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b`
 
-### First-party application files (Stage 6)
+### First-party application files (KeshScan Studio)
 
-- `app.js`: `c7e2a0e4ec537ebaebc016df80bb756a28fbcb10ce54a129e18ab6bcad977ee0`
-- `index.html`: `9e0ef6fd90a722f14f0e6648dff7ab46607e21325ec36372c58b1344b7862788`
+- `app.js`: `7c0cd3546d1abbe66a0d190582d6337f77967260c929224c1375ea1a1425a022`
+- `index.html`: `58a442f2b4df15afb8d4e1f7dabb80c4e0f7a70f8702b6aeb7e28ba1de65a196`
 - `style.css`: `b15eda841701fccc360040ed887cb023de4b5984e7e4c96347b1a6b5c9242a6e`
-- `sw.js`: `f033b6e53f95401132ccfc265107844171f5b0e547b187b122dfbf5edb62fd4a`
-- `manifest.json`: `a135f9410662b70ab943e9ec9c08be24863622357cb8a90242b230a9aae82320`
+- `sw.js`: `678169ae60f12cd4f83684d06e6df1ac9bdec6cbc039a7b406e211fa9ef77876`
+- `manifest.json`: `b42abad92c9443935692cbc802d0070c4c3c55dc8c29ec25370809b078878793`
 - `paper-match.js`: `d43a6690f03539b2c57b61688c94e0926e0e31682e49c051beb886aa1cc74275`
 - `vision.js`: `7f2bdcc170867c9de8b6d85902ca28854974e1b8bf5dea5f1d1014221933173d`
 - `filter-client.js`: `d8c55f37ca6fc46d7df2aaaf2b4c81f67ae6ca3513cb7b3a7ff116e80a1af0b6`

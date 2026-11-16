@@ -1,4 +1,8 @@
-# Test report — Stage 6 (UX refresh)
+# KeshScan Studio — test report
+
+_Current release: branding and repository cleanup (no functional or UI change)._
+
+
 
 Run: 16 Nov 2026 · headless Chromium · Playwright
 Command pattern: `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node <suite>`
