@@ -3,6 +3,13 @@
 Run: 16 Nov 2026 · headless Chromium · Playwright
 Command pattern: `PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers node <suite>`
 
+## Stage 6.1 addition
+
+`test-move.js` — **7 pass / 0 fail**: dialog lists every position, current
+position is marked, confirming splices the page to the chosen index, cancel
+leaves the order untouched, and the page count is preserved. Reorder is
+persisted through the existing `persist()` path.
+
 ## Regression suites (all green)
 
 | Suite | Result |

@@ -37,6 +37,17 @@ reproducible with the `ux-audit` script.
 | Motion | `prefers-reduced-motion` disables sheet slide and scroll smoothing |
 | Colour | danger reserved for destructive actions only |
 
+## Stage 6.1 — reorder pages quickly
+
+Merging already worked (import several PDFs/images, then Export → one PDF), but
+ordering a 20-page merge meant 20 single-step taps. The Document Stack card now
+carries a **Move…** action: pick any target position and the page is spliced
+there in one step. It reorders the same `documentPages` array the ←/→ buttons
+use, so order stays the single source of truth and the saved order is unchanged.
+
+Gallery actions are also laid out as two tidy rows (←/→ then Move…/Delete) at
+44px each, instead of a ragged stack that pushed Delete off the card.
+
 ## Verification
 
 - `test-stage5.js` 26/26, `test-text-sig.js` 59/59, `test-full.js` 4/4,

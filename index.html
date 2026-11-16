@@ -1164,6 +1164,22 @@
         </div>
       </div>
     </dialog>
+    <dialog id="move-modal" class="modal move-modal" aria-labelledby="move-title">
+      <form method="dialog" class="modal-content" id="move-form">
+        <h3 id="move-title">Move page</h3>
+        <p class="footnote" id="move-page-label">Page 1 of 1</p>
+        <div class="modal-setting">
+          <label for="move-position">New position</label>
+          <select id="move-position"></select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="move-cancel" class="tool-btn">Cancel</button>
+          <button type="button" id="move-confirm" class="tool-btn primary">
+            Move page
+          </button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="name-modal" class="modal">
       <form id="export-form" class="modal-content">
         <h3>Export Document</h3>

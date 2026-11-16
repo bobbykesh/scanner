@@ -34,9 +34,9 @@ These are vendored, pinned copies of the dependency versions in the supplied app
 
 ### First-party application files (Stage 6)
 
-- `app.js`: `ff5a506a106759f2686f87932550fd1fdb27a4189fa0b3827c8b3bbf0a96bc76`
-- `index.html`: `6c221f7b1ee89cabbf20ac7f91018e1b429c61cec61caf6b451a597ae49d5d72`
-- `style.css`: `e6fced04ec7b6e77ce03f6a1ff13af77e1155382740a96eaf75965a3fe3f4c75`
+- `app.js`: `c7e2a0e4ec537ebaebc016df80bb756a28fbcb10ce54a129e18ab6bcad977ee0`
+- `index.html`: `9e0ef6fd90a722f14f0e6648dff7ab46607e21325ec36372c58b1344b7862788`
+- `style.css`: `b15eda841701fccc360040ed887cb023de4b5984e7e4c96347b1a6b5c9242a6e`
 - `sw.js`: `f033b6e53f95401132ccfc265107844171f5b0e547b187b122dfbf5edb62fd4a`
 - `manifest.json`: `a135f9410662b70ab943e9ec9c08be24863622357cb8a90242b230a9aae82320`
 - `paper-match.js`: `d43a6690f03539b2c57b61688c94e0926e0e31682e49c051beb886aa1cc74275`

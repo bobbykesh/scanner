@@ -4790,9 +4790,15 @@
         () => movePage(page.id, 1),
         index === documentPages.length - 1,
       );
+      action(
+        "Move…",
+        `Move page ${index + 1} to another position`,
+        () => openMoveDialog(page.id),
+        documentPages.length < 2,
+      );
       action("Delete", `Delete page ${index + 1}`, () =>
         deletePage(page.id),
-      ).className = "btn-del";
+      ).className = "btn-del btn-wide";
       card.append(open, actions);
       gallery.append(card);
     });
@@ -4849,6 +4855,60 @@
     dirty = !saved;
     renderGallery();
   }
+  $("move-confirm")?.addEventListener("click", applyMovePosition);
+  $("move-cancel")?.addEventListener("click", () => {
+    moveTargetId = null;
+    $("move-modal")?.close();
+  });
+  $("move-position")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyMovePosition();
+    }
+  });
+
+  // "Move to…" — reorders the same page array the ← → buttons use, so the
+  // document order stays the single source of truth.
+  let moveTargetId = null;
+  function openMoveDialog(id) {
+    const dialog = $("move-modal");
+    const select = $("move-position");
+    if (!dialog || !select) return;
+    const index = documentPages.findIndex((page) => page.id === id);
+    if (index < 0) return;
+    moveTargetId = id;
+    select.replaceChildren();
+    documentPages.forEach((page, position) => {
+      const option = document.createElement("option");
+      option.value = String(position);
+      option.textContent =
+        position === index
+          ? `Page ${position + 1} (current)`
+          : `Page ${position + 1}`;
+      if (position === index) option.selected = true;
+      select.append(option);
+    });
+    $("move-page-label").textContent = `Page ${index + 1} of ${documentPages.length}`;
+    dialog.showModal();
+    select.focus();
+  }
+  async function applyMovePosition() {
+    if (moveTargetId === null) return;
+    const select = $("move-position");
+    const from = documentPages.findIndex((page) => page.id === moveTargetId);
+    const to = Number(select?.value);
+    moveTargetId = null;
+    $("move-modal")?.close();
+    if (from < 0 || !Number.isInteger(to) || to === from) return;
+    const [page] = documentPages.splice(from, 1);
+    documentPages.splice(to, 0, page);
+    const saved = await persist();
+    dirty = !saved;
+    renderGallery();
+    syncEditorTitle();
+    notice(`Moved to position ${to + 1}.`);
+  }
+
   async function movePage(id, offset) {
     if (busy || saving) return;
     const index = documentPages.findIndex((page) => page.id === id),

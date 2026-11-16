@@ -3285,3 +3285,79 @@ input[type="range"]::-moz-range-thumb {
 .light-theme .crop-size-readout {
   background: #0b1220e0;
 }
+
+/* --- Move page dialog -------------------------------------------- */
+.move-modal .modal-setting select {
+  min-height: var(--tap-min);
+  font-size: var(--fs-body-s);
+}
+.move-modal .footnote {
+  margin: 2px 0 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+}
+.move-modal .modal-actions {
+  display: flex;
+  gap: 8px;
+}
+.move-modal .modal-actions .tool-btn {
+  flex: 1;
+  min-height: var(--tap-min);
+}
+/* The gallery "Move to…" action must not be squeezed by the arrows. */
+@media (max-width: 599px) {
+  .card-actions {
+    flex-wrap: wrap;
+  }
+  .card-actions button {
+    min-height: var(--tap-min);
+    min-width: var(--tap-min);
+  }
+}
+
+/* --- Gallery: one ordered row of actions instead of a ragged stack -- */
+.page-gallery {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+}
+@media (max-width: 599px) {
+  .page-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .page-card {
+    padding: 10px;
+    gap: 8px;
+  }
+  .page-card img {
+    height: 180px;
+  }
+  /* Two rows: navigation arrows, then the two real actions. */
+  .card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+  .card-actions button {
+    min-height: var(--tap-min);
+    min-width: 0;
+    padding: 0 6px;
+    font-size: var(--fs-label);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .card-actions .btn-del {
+    grid-column: auto;
+  }
+}
+@media (max-width: 599px) {
+  .card-actions .btn-wide {
+    grid-column: span 1;
+  }
+  /* Row 1 = ← →, row 2 = Move… Delete */
+  .card-actions button:nth-child(1) { grid-row: 1; grid-column: 1; }
+  .card-actions button:nth-child(2) { grid-row: 1; grid-column: 2; }
+  .card-actions button:nth-child(3) { grid-row: 2; grid-column: 1; }
+  .card-actions button:nth-child(4) { grid-row: 2; grid-column: 2; }
+}

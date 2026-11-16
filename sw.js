@@ -1,7 +1,7 @@
 "use strict";
 // Bump this version whenever you deploy updated application files.
 const CACHE_PREFIX = "proscan-studio-";
-const CACHE_NAME = `${CACHE_PREFIX}stage6-ui-refresh-2026-11-16-1`;
+const CACHE_NAME = `${CACHE_PREFIX}stage6-1-reorder-2026-11-16-1`;
 const ASSETS = [
   "./",
   "./index.html",
