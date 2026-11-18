@@ -121,3 +121,33 @@ Source is provided for use by the named organisation. The name **KeshScan
 Studio**, its logo and its icons are unregistered trademarks of the author; see
 [TRADEMARK.md](TRADEMARK.md). Third-party libraries retain their own licences —
 see [THIRD-PARTY.md](THIRD-PARTY.md).
+
+## Auto crop and all-page filters
+
+- **Photos:** import suggests four corners automatically. Inspect every edge, then
+  choose **Apply crop**. **Auto Detect** retries; **Undo** restores the previous
+  corners. Reset and uncertain new imports retain the full image, rather than
+  trimming 5%. Existing manual handles and perspective crop remain available.
+- **PDFs:** original page bounds stay selected on import/re-crop; automatic
+  detection is not run on imported PDF pages. Auto Detect can be invoked manually
+  if a page contains a photographed document. It never silently commits a crop.
+- **All-page filter:** select a preset and adjustments in Filter, choose
+  **Apply to all saved pages**, and confirm. Saved filtered appearances are
+  replaced, using each page's edited base. Crop/rotation and cover edits are kept;
+  editable text/signature objects and PDF metadata are retained. Current working
+  edits on an already-saved page are included; a completely new unsaved page still
+  needs **Add to Doc**. Filter settings affect raster pixels, not editable object ink.
+- Work is sequential with a 32 MiB estimate for staged encoded result/new base
+  strings. This is NOT a total-RAM limit. Large documents may need individual
+  application. All saved results commit in one IndexedDB transaction; failures
+  before commit retain saved records and permit retry. There is no bulk Undo;
+  the normal Undo only applies to the current working page. Export a backup first.
+- No AI model, paid service, build step or upload was introduced. Keep the same
+  hostname for access to saved scans. After deployment, save current work and
+  accept the app update; do not clear site data. `auto-crop.js` is part of offline
+  precaching. First worker activation does not automatically interrupt editing.
+
+Auto detection is not guaranteed: low contrast, partial edges, glare, clutter or
+multiple sheets can produce an incorrect proposal or require manual handles.
+Desktop Chromium/WebKit tests do not establish real-iPhone photo accuracy or peak
+memory safety. See **AUTO-CROP-BULK-VALIDATION.md** for measured test coverage.

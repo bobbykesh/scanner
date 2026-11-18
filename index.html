@@ -29,6 +29,7 @@
     <script defer src="vendor/jspdf-2.5.1.umd.min.js"></script>
     <script defer src="vendor/pdf-3.11.174.min.js"></script>
     <script defer src="vision.js"></script>
+    <script defer src="auto-crop.js"></script>
     <script defer src="filter-client.js"></script>
     <script defer src="paper-match.js"></script>
     <script defer src="local-repair-core.js"></script>
@@ -182,13 +183,14 @@
               </button>
             </div>
             <div class="tool-group">
-              <button id="btn-undo" class="tool-btn">Undo</button
+              <button id="btn-auto-crop" class="tool-btn" type="button">Auto Detect</button><button id="btn-undo" class="tool-btn">Undo</button
               ><button id="btn-reset" class="tool-btn danger">
                 Reset</button
               ><button id="btn-cancel-crop" class="tool-btn">Cancel</button>
             </div>
           </div>
         </div>
+        <p id="auto-crop-status" role="status" class="footnote">Inspect all four corners before applying crop.</p>
         <div class="studio-layout">
           <div class="stage-panel">
             <div class="panel-label">Source · drag the four corners</div>
@@ -975,6 +977,7 @@
           </button>
         </div>
 
+        <button id="filter-all" class="tool-btn bulk-filter-action" type="button" disabled>Apply to all saved pages</button>
         <div
           class="filter-grid"
           role="group"
@@ -1076,7 +1079,7 @@
             <span class="filter-preview"
               ><canvas aria-hidden="true" width="1" height="1"></canvas
               ><span class="thumbnail-loading">Loading…</span></span
-            ><span class="filter-name">Magic · legacy</span></button
+            ><span class="filter-name">Magic · legacy</span></button>
         </div>
         <section class="sheet-section filter-adjustments" data-open="false" id="filter-adjustments">
           <button class="sheet-section-head" type="button" data-section-toggle aria-expanded="false" id="btn-filter-adjustments">

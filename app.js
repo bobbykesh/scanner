@@ -470,21 +470,38 @@
       .drawImage(currentImage, 0, 0, proxyImage.width, proxyImage.height);
   }
   function defaultCorners() {
-    if (currentSourceIsPdf) {
-      return [
-        { x: 0, y: 0 },
-        { x: currentImage.width - 1, y: 0 },
-        { x: currentImage.width - 1, y: currentImage.height - 1 },
-        { x: 0, y: currentImage.height - 1 },
-      ];
-    }
     return [
-      { x: currentImage.width * 0.05, y: currentImage.height * 0.05 },
-      { x: currentImage.width * 0.95, y: currentImage.height * 0.05 },
-      { x: currentImage.width * 0.95, y: currentImage.height * 0.95 },
-      { x: currentImage.width * 0.05, y: currentImage.height * 0.95 },
+      { x: 0, y: 0 },
+      { x: currentImage.width - 1, y: 0 },
+      { x: currentImage.width - 1, y: currentImage.height - 1 },
+      { x: 0, y: currentImage.height - 1 },
     ];
   }
+  function detectCrop(recordHistory = true) {
+    try {
+      const result = DocumentAutoCrop.detect(currentImage);
+      if (!result) {
+        $("auto-crop-status").textContent =
+          "No reliable page boundary found. Original retained; adjust all four corners manually.";
+        return;
+      }
+      VisionEngine.validateCorners(result.points);
+      if (recordHistory) pushCropHistory();
+      corners = result.points;
+      renderStudio();
+      updatePreview();
+      $("auto-crop-status").textContent =
+        "Auto crop suggestion — inspect all edges and writing, adjust if needed, then Apply crop.";
+    } catch (error) {
+      $("auto-crop-status").textContent =
+        "Auto detection unavailable. Manual cropping remains available.";
+      console.warn(error);
+    }
+  }
+  $("btn-auto-crop").addEventListener("click", async () => {
+    if (busy || !currentImage) return;
+    await runTask("Detecting document edges…", async () => detectCrop());
+  });
   function isFullPageCorners(points, width, height) {
     if (!Array.isArray(points) || points.length !== 4) return false;
     const expected = [
@@ -507,6 +524,9 @@
     $("btn-undo").disabled = true;
     $("btn-crop").disabled = false;
     $("preview-status").textContent = "";
+    $("auto-crop-status").textContent = currentSourceIsPdf
+      ? "PDF page bounds retained. Auto Detect is optional; inspect before applying crop."
+      : "Auto crop suggests corners only. Inspect before applying crop.";
     showView("crop-view");
   }
 
@@ -978,6 +998,7 @@
       markDirty();
       setDockLabel("btn-save-page", "Add to Doc");
       initStudio();
+      detectCrop(false);
       notice(
         scale < 1
           ? "Image resized to a maximum edge of 2800 px for safer mobile processing. Keep your original file for full resolution."
@@ -1402,7 +1423,7 @@
     const session = filterSession,
       request = ++session.request;
     session.pending = true;
-    $("filter-confirm").disabled = true;
+    $("filter-confirm").disabled = $("filter-all").disabled = true;
     $("filter-status").textContent = "Processing preview in background…";
     filterPreviewTimer = setTimeout(async () => {
       filterPreviewTimer = null;
@@ -1441,7 +1462,7 @@
       } finally {
         if (filterSession === session && session.request === request) {
           session.pending = false;
-          $("filter-confirm").disabled = !session.valid;
+          $("filter-confirm").disabled = $("filter-all").disabled = !session.valid;
         }
       }
     }, delay);
@@ -1475,7 +1496,7 @@
     document.body.classList.add("filtering", "editing");
     markDockButtons();
     updateFilterControls();
-    $("filter-confirm").disabled = false;
+    $("filter-confirm").disabled = $("filter-all").disabled = false;
     $("filter-status").textContent =
       "Current appearance preserved · presets process in a background worker.";
     document.querySelectorAll(".thumbnail-loading").forEach((label) => {
@@ -1603,6 +1624,158 @@
   $("filter-modal").addEventListener("cancel", (event) => {
     event.preventDefault();
     cancelFilters();
+  });
+  $("filter-all").addEventListener("click", async () => {
+    const session = filterSession;
+    if (!session || session.pending || !session.valid || busy || saving) return;
+    if (!documentPages.length) {
+      $("filter-status").textContent =
+        "Add pages to the document first. Use Apply for this unsaved page.";
+      return;
+    }
+    if (!storageReadable) {
+      $("filter-status").textContent =
+        "Saved pages could not be read. Reload before bulk changes.";
+      return;
+    }
+    if (
+      !confirm(
+        `Apply this filter and its settings to all ${documentPages.length} saved pages AND the current page? Existing appearances will be replaced. Crops, rotations and committed cover/Clone edits are retained. Editable text/signatures are preserved. New unsaved pages still need Add to Doc. Export a backup first; there is no bulk Undo.`,
+      )
+    )
+      return;
+    busy = true;
+    FilterProcessor.cancel("thumbs");
+    const controls = [
+      ...$("filter-modal").querySelectorAll("button,input,select"),
+    ];
+    controls.forEach((c) => (c.disabled = true));
+    const previousPages = documentPages;
+    const nextPages = [];
+    let stagedStringBytes = 0;
+    let bulkCommitted = false;
+    try {
+      for (let i = 0; i < previousPages.length; i++) {
+        $("filter-status").textContent =
+          `Preparing page ${i + 1} of ${previousPages.length}… originals unchanged until all pages succeed.`;
+        await new Promise((r) => setTimeout(r, 0));
+        const page = previousPages[i],
+          source = document.createElement("canvas"),
+          output = document.createElement("canvas");
+        try {
+          if (page.id === activePageId) copy(bufferCanvas, source);
+          else {
+            const image = await loadImage(
+              !page.stage1Version ||
+                !FilterProcessor.supportsFilter(page.filter)
+                ? page.final
+                : page.cropped,
+            );
+            source.width = image.naturalWidth;
+            source.height = image.naturalHeight;
+            source.getContext("2d").drawImage(image, 0, 0);
+          }
+          await renderFilter(
+            source,
+            output,
+            session.selected,
+            session.settings,
+            { group: "apply", priority: 4 },
+          );
+          const nextPage = {
+            ...page,
+            order: i,
+            stage1Version: 1,
+            ...(page.id === activePageId
+              ? { annotations: serializeAnnotations() }
+              : {}),
+            cropped:
+              page.id === activePageId ||
+              !page.stage1Version ||
+              !FilterProcessor.supportsFilter(page.filter)
+                ? source.toDataURL("image/png")
+                : page.cropped,
+            final: output.toDataURL("image/png"),
+            filter: session.selected,
+            filterSettings: { ...session.settings },
+          };
+          stagedStringBytes +=
+            nextPage.final.length * 2 +
+            (nextPage.cropped !== page.cropped
+              ? nextPage.cropped.length * 2
+              : 0);
+          if (stagedStringBytes > 32 * 1024 * 1024)
+            throw new Error(
+              "Bulk results exceed the 32 MiB staging budget. Apply individually or use a smaller document",
+            );
+          nextPages.push(nextPage);
+        } finally {
+          source.width = source.height = output.width = output.height = 1;
+        }
+      }
+      const currentResult = document.createElement("canvas");
+      await renderFilter(
+        bufferCanvas,
+        currentResult,
+        session.selected,
+        session.settings,
+        { group: "apply", priority: 4 },
+      );
+      // One storage transaction: quota failure leaves saved records and in-memory pages unchanged.
+      // Bulk writes intentionally bypass length-based incremental signatures:
+      // equally sized encoded images can still contain different pixels.
+      const db = await openDB();
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, "readwrite");
+          tx.oncomplete = resolve;
+          tx.onerror = tx.onabort = () =>
+            reject(tx.error || new Error("Bulk save failed"));
+          try {
+            const store = tx.objectStore(STORE_NAME);
+            nextPages.forEach((page) => store.put(page));
+          } catch (error) {
+            tx.abort();
+            reject(error);
+          }
+        });
+      } finally {
+        db.close();
+      }
+      bulkCommitted = true;
+      documentPages = nextPages;
+      pendingSignatures.clear();
+      rememberSaved();
+      clearEditUndo();
+      editUndo = {
+        base: clone(bufferCanvas),
+        final: session.previous,
+        filter: session.previousFilter,
+        settings: { ...session.previousSettings },
+      };
+      $("btn-undo-edit").disabled = false;
+      copy(currentResult, finalCanvas);
+      currentResult.width = currentResult.height = 1;
+      currentFilter = session.selected;
+      currentFilterSettings = { ...session.settings };
+      maskCanvas.width = finalCanvas.width;
+      maskCanvas.height = finalCanvas.height;
+      requestOverlayRender();
+      markDirty();
+      renderGallery();
+      closeFilterSession();
+      notice(
+        "Filter saved to all document pages. Current-page Undo affects only this working page; save it to update its stored copy.",
+      );
+    } catch (error) {
+      $("filter-status").textContent = bulkCommitted
+        ? "Pages were saved, but the editor could not refresh. Reload to restore the saved document."
+        : `Bulk apply failed: ${error.message || error}. Saved pages and previous result retained. Cancel or retry.`;
+    } finally {
+      busy = false;
+      controls.forEach((c) => (c.disabled = false));
+      if (filterSession) updateFilterControls();
+    }
   });
   $("filter-confirm").addEventListener("click", async () => {
     const session = filterSession;
@@ -5925,10 +6098,13 @@
       fail("Could not refresh application files.", error);
     }
   });
+  let acceptedWorkerUpdate = false;
   $("update-btn").addEventListener("click", () => {
     if (!safeToReload()) return;
-    if (updateRegistration?.waiting)
+    if (updateRegistration?.waiting) {
+      acceptedWorkerUpdate = true;
       updateRegistration.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
     else location.reload();
   });
   window.addEventListener("beforeunload", (event) => {
@@ -5948,6 +6124,7 @@
   async function registerWorker() {
     if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
     try {
+      const controlledAtRegistration = Boolean(navigator.serviceWorker.controller);
       const reg = await navigator.serviceWorker.register("./sw.js");
       updateRegistration = reg;
       if (reg.waiting) $("update-toast").hidden = false;
@@ -5957,7 +6134,7 @@
         worker.addEventListener("statechange", () => {
           if (
             worker.state === "installed" &&
-            navigator.serviceWorker.controller
+            controlledAtRegistration
           )
             $("update-toast").hidden = false;
         });
@@ -5965,7 +6142,7 @@
       let reloading = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         // First installation claims the page without interrupting work.
-        if (!$("update-toast").hidden && !reloading) {
+        if (acceptedWorkerUpdate && !reloading) {
           reloading = true;
           location.reload();
         }
